@@ -38,9 +38,11 @@ values = [ini_learning_rate, ini_learning_rate * 0.1, ini_learning_rate, ini_lea
           ini_learning_rate * 0.1]
 
 # Define Dataset
-train_file = 'train_parent.txt'
-dataset = Dataset(train_file, None, './DAVIS', store_memory=store_memory, data_aug=data_aug)
-
+train_file = 'train_list.txt'
+val_file = 'val_list.txt'
+dataset_path = '/raid/ljyang/data/DAVIS'
+dataset = Dataset(train_file, val_file, dataset_path, store_memory=store_memory, data_aug=data_aug)
+# 
 # Train the network
 with tf.Graph().as_default():
     with tf.device('/gpu:' + str(gpu_id)):

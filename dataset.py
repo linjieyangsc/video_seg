@@ -14,7 +14,7 @@ import sys
 
 
 class Dataset:
-    def __init__(self, train_list, test_list, database_root, store_memory=True, data_aug=False):
+    def __init__(self, train_list, test_list, database_root, store_memory=True, data_aug=False, data_aug_scales=[0.5, 0.8, 1]):
         """Initialize the Dataset object
         Args:
         train_list: TXT file or list with the paths of the images to use for training (Images must be between 0 and 255)
@@ -27,7 +27,6 @@ class Dataset:
             sys.stderr.write('Online data augmentation not supported when the data is not stored in memory!')
             sys.exit()
         # Define types of data augmentation
-        data_aug_scales = [0.5, 0.8, 1]
         data_aug_flip = True
 
         # Load training images (path) and labels
