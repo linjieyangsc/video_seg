@@ -14,7 +14,7 @@ slim = tf.contrib.slim
 # Import OSVOS files
 root_folder = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.abspath(root_folder))
-import osvos_resnet
+import osvos_inception_resnet
 from dataset import Dataset
 
 # User defined parameters
@@ -24,18 +24,18 @@ if len(sys.argv) < 2:
 gpu_id = sys.argv[1]
 
 # Training parameters
-#imagenet_ckpt = 'models_resnet/resnet_v2_101.ckpt'
-imagenet_ckpt = 'models_resnet/OSVOS_parent/OSVOS_parent.ckpt-5000'
-logs_path = os.path.join(root_folder, 'models_resnet', 'OSVOS_parent')
+#imagenet_ckpt = 'models_inception_resnet/inception_resnet_v2_2016_08_30.ckpt'
+imagenet_ckpt = 'models_inception_resnet/OSVOS_parent/OSVOS_parent.ckpt-5000'
+logs_path = os.path.join(root_folder, 'models_inception_resnet', 'OSVOS_parent')
 store_memory = True
 data_aug = True
 iter_mean_grad = 10
-max_training_iters = 20000
+max_training_iters = 15000
 save_step = 5000
 test_image = None
 display_step = 100
 ini_learning_rate = 1e-8
-boundaries = [10000, 20000]
+boundaries = [5000, 15000]
 values = [ini_learning_rate, ini_learning_rate * 0.1]
 
 # Define Dataset
@@ -49,7 +49,7 @@ with tf.Graph().as_default():
     with tf.device('/gpu:' + str(gpu_id)):
         global_step = tf.Variable(0, name='global_step', trainable=False)
         learning_rate = tf.train.piecewise_constant(global_step, boundaries, values)
-        osvos_resnet.train_parent(dataset, imagenet_ckpt, 1, learning_rate, logs_path, max_training_iters, save_step,
+        osvos_inception_resnet.train_parent(dataset, imagenet_ckpt, 1, learning_rate, logs_path, max_training_iters, save_step,
                            display_step, global_step, iter_mean_grad=iter_mean_grad, test_image_path=test_image,
                            ckpt_name='OSVOS_parent')
 

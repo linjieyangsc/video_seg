@@ -16,7 +16,7 @@ import os
 import scipy.misc
 from PIL import Image
 sys.path.append('../models/slim')
-from nets import resnet_v2
+from nets import inception_resnet_v2
 slim = tf.contrib.slim
 
 
@@ -46,15 +46,15 @@ def osvos(inputs):
     end_points: Dictionary with all Tensors of the network
     """
     im_size = tf.shape(inputs)
-    with slim.arg_scope(resnet_v2.resnet_arg_scope()):
-        net, end_points = resnet_v2.resnet_v2_101(inputs, None, is_training=False,
-                        global_pool=False, spatial_squeeze=False, output_stride = 4)
+    with slim.arg_scope(inception_resnet_v2.inception_resnet_v2_arg_scope()):
+        net, end_points = inception_resnet_v2.inception_resnet_v2(inputs, None, is_training=False,
+                        global_pool=False, padding = 'SAME')
         #end_points_collection = slim.utils.convert_dict_to_collection(end_points)
         with slim.arg_scope([slim.convolution2d_transpose],
                             activation_fn=None, biases_initializer=None, padding='VALID',
-                             trainable=True):
-            scores = slim.conv2d(net, 32, [1,1], scope ='score')
-            scores_up = slim.convolution2d_transpose(scores, 1, 8, 4, scope='score-up')
+                             trainable=False):
+            scores = slim.conv2d(net, 1, [1,1], scope ='score')
+            scores_up = slim.convolution2d_transpose(scores, 1, 32, 16, scope='score-up')
             scores_crop = crop_features(scores_up, im_size)
             net = scores_crop
     #end_points = slim.utils.convert_collection_to_dict(end_points_collection)
@@ -103,7 +103,7 @@ def preprocess_img(image):
         image = np.array(Image.open(image), dtype=np.uint8)
     in_ = image
     in_ = np.subtract(in_, np.array((127.0, 127.0, 127.0), dtype=np.float32))
-    in_ = in_ / 127.0 # normalize to [-1, 1]
+    in_ = in_ / 127.0
     # in_ = tf.subtract(tf.cast(in_, tf.float32), np.array((104.00699, 116.66877, 122.67892), dtype=np.float32))
     in_ = np.expand_dims(in_, axis=0)
     # in_ = tf.expand_dims(in_, 0)
@@ -141,7 +141,7 @@ def load_resnet_imagenet(ckpt_path):
     var_to_shape_map = reader.get_variable_to_shape_map()
     vars_corresp = dict()
     variables_to_restore = tf.trainable_variables()
-    exclusions=['score']
+    exclusions=['score','InceptionResnetV2/Mixed_7a','InceptionResnetV2/Mixed_7b','InceptionResnetV2/Mixed_7c', 'InceptionResnetV2/AuxLogits','InceptionResnetV2/Logits']
     variables_to_restore = []
     for var in slim.get_model_variables():
         excluded = False
@@ -341,7 +341,7 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
                 saver_res = tf.train.Saver(var_list=var_list)
                 saver_res.restore(sess, initial_ckpt)
             step = 1
-        #sess.run(interp_surgery(tf.global_variables()))
+        sess.run(interp_surgery(tf.global_variables()))
         print('Weights initialized')
 
         print 'Start training'

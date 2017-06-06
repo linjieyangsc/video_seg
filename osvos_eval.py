@@ -10,7 +10,7 @@ def calcIoU(gt, pred):
     iou = float(inter.sum()) / union.sum()
     return iou
 gt_path = '/raid/ljyang/data/DAVIS/Annotations/480p_split'
-pred_path = 'DAVIS/Results/Segmentations/480p/OSVOS'
+pred_path = 'DAVIS/Results/Segmentations/480p/OSVOS_parent'
 sav_path = 'DAVIS/Visualize'
 fds = os.listdir(pred_path)
 fds = sorted(fds)
