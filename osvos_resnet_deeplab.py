@@ -58,7 +58,7 @@ def osvos(inputs):
             with slim.arg_scope([slim.conv2d], activation_fn=None, 
                       normalizer_fn=None, padding='SAME'):
                 conv1_relu = tf.nn.relu(end_points['conv1'])
-                score0 = slim.conv2d(conv1_relu, 16, [3, 3], scope='score0')
+                scores0 = slim.conv2d(conv1_relu, 16, [3, 3], scope='score0')
                 scores1 = slim.conv2d(net, 16, [3, 3], scope ='score1')
                 scores_up1 = slim.convolution2d_transpose(scores1, 16, 8, 4, scope='score-up1')
                 scores_crop1 = crop_features(scores_up1, im_size)
