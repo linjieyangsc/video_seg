@@ -50,21 +50,23 @@ def osvos(inputs):
         net, end_points = resnet_v2.resnet_v2_101(inputs, None, is_training=False,
                         global_pool=False, spatial_squeeze=False, output_stride = 4)
         #end_points_collection = slim.utils.convert_dict_to_collection(end_points)
-        scores0 = slim.conv2d(end_points['conv1'], 16, [3, 3], 
-                            normalizer_fn=None, scope='score0')
-           
+        
 
         with slim.arg_scope([slim.convolution2d_transpose],
                             activation_fn=None, biases_initializer=None, padding='VALID',
                              trainable=True):
-            scores1 = slim.conv2d(net, 16, [3, 3], scope ='score1')
-            scores_up1 = slim.convolution2d_transpose(scores1, 16, 8, 4, scope='score-up1')
-            scores_crop1 = crop_features(scores_up1, im_size)
-            scores_up0 = slim.convolution2d_transpose(scores0, 16, 4, 2, scope='score-up0')
-            scores_crop0 = crop_features(scores_up0, im_size)
-            scores_concat = tf.concat(axis=3, values=[scores_crop0, scores_crop1])
-            scores_final = slim.conv2d(scores_concat, 1, [1, 1], scope ='score-final')
-            net = scores_final
+            with slim.arg_scope([slim.conv2d], activation_fn=None, 
+                      normalizer_fn=None, padding='SAME'):
+                conv1_relu = tf.nn.relu(end_points['conv1'])
+                score0 = slim.conv2d(conv1_relu, 16, [3, 3], scope='score0')
+                scores1 = slim.conv2d(net, 16, [3, 3], scope ='score1')
+                scores_up1 = slim.convolution2d_transpose(scores1, 16, 8, 4, scope='score-up1')
+                scores_crop1 = crop_features(scores_up1, im_size)
+                scores_up0 = slim.convolution2d_transpose(scores0, 16, 4, 2, scope='score-up0')
+                scores_crop0 = crop_features(scores_up0, im_size)
+                scores_concat = tf.concat(axis=3, values=[scores_crop0, scores_crop1])
+                scores_final = slim.conv2d(scores_concat, 1, [1, 1], scope ='score-final')
+                net = scores_final
     #end_points = slim.utils.convert_collection_to_dict(end_points_collection)
     return net, end_points
 
