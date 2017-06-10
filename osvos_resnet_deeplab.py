@@ -60,7 +60,7 @@ def osvos(inputs):
             scores1 = slim.conv2d(net, 16, [3, 3], scope ='score1')
             scores_up1 = slim.convolution2d_transpose(scores1, 16, 8, 4, scope='score-up1')
             scores_crop1 = crop_features(scores_up1, im_size)
-            scores_up0 = slim.convolution2d_transpose(scores0, 16, 4, 2, score='score-up0')
+            scores_up0 = slim.convolution2d_transpose(scores0, 16, 4, 2, scope='score-up0')
             scores_crop0 = crop_features(scores_up0, im_size)
             scores_concat = tf.concat(axis=3, values=[scores_crop0, scores_crop1])
             scores_final = slim.conv2d(scores_concat, 1, [1, 1], scope ='score-final')
