@@ -30,7 +30,8 @@ for seq_name in seq_names:
     gpu_id = sys.argv[1]
     result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS_train', seq_name)
     # Train parameters
-    parent_path = os.path.join('models_resnet', 'OSVOS_parent', 'OSVOS_parent.ckpt-15000')
+    parent_path = os.path.join('models_resnet', 'OSVOS_parent', 'OSVOS_parent.ckpt-10000')
+
     logs_path = os.path.join('models_resnet', seq_name)
 
     # Define Dataset

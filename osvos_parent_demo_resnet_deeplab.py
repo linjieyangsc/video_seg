@@ -14,7 +14,7 @@ slim = tf.contrib.slim
 # Import OSVOS files
 root_folder = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.abspath(root_folder))
-import osvos_resnet
+import osvos_resnet_deeplab as osvos_resnet
 from dataset import Dataset
 
 # User defined parameters
@@ -26,7 +26,7 @@ gpu_id = sys.argv[1]
 # Training parameters
 imagenet_ckpt = 'models_resnet/resnet_v2_101.ckpt'
 #imagenet_ckpt = 'models_resnet/OSVOS_parent/OSVOS_parent.ckpt-5000'
-logs_path = os.path.join(root_folder, 'models_resnet', 'OSVOS_parent')
+logs_path = os.path.join(root_folder, 'models_resnet_deeplab', 'OSVOS_parent')
 store_memory = True
 data_aug = True
 iter_mean_grad = 10
@@ -34,7 +34,7 @@ max_training_iters = 20000
 save_step = 5000
 test_image = None
 display_step = 100
-ini_learning_rate = 1e-8
+ini_learning_rate = 1e-7
 boundaries = [10000, 20000]
 values = [ini_learning_rate, ini_learning_rate * 0.1]
 

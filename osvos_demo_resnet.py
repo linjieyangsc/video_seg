@@ -35,7 +35,7 @@ for seq_name in seq_names:
         else:
             result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS_parent', seq_name, label_id)
         # Train parameters
-        parent_path = os.path.join('models_resnet', 'OSVOS_parent', 'OSVOS_parent.ckpt-5000')
+        parent_path = os.path.join('models_resnet', 'OSVOS_parent', 'OSVOS_parent.ckpt-20000')
         logs_path = os.path.join('models_resnet', seq_name, label_id)
         if train_model:
             max_training_iters = int(sys.argv[2])
@@ -54,7 +54,7 @@ for seq_name in seq_names:
         # Train the network
         if train_model:
             # More training parameters
-            learning_rate = 1e-8
+            learning_rate = 1e-7
             side_supervision = 3
             save_step = max_training_iters
             display_step = 10
