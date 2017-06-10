@@ -53,10 +53,12 @@ def osvos(inputs):
         with slim.arg_scope([slim.convolution2d_transpose],
                             activation_fn=None, biases_initializer=None, padding='VALID',
                              trainable=True):
-            scores = slim.conv2d(net, 32, [1,1], scope ='score')
-            scores_up = slim.convolution2d_transpose(scores, 1, 8, 4, scope='score-up')
-            scores_crop = crop_features(scores_up, im_size)
-            net = scores_crop
+            with slim.arg_scope([slim.conv2d], activation_fn=None, 
+                      normalizer_fn=None, padding='SAME'):
+                scores = slim.conv2d(net, 32, [1,1], scope ='score')
+                scores_up = slim.convolution2d_transpose(scores, 1, 8, 4, scope='score-up')
+                scores_crop = crop_features(scores_up, im_size)
+                net = scores_crop
     #end_points = slim.utils.convert_collection_to_dict(end_points_collection)
     return net, end_points
 
