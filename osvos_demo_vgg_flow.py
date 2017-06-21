@@ -31,32 +31,35 @@ for seq_name in seq_names:
     label_fds = os.listdir(os.path.join(baseDir,'DAVIS/Annotations/480p_split', seq_name))
     for label_id in label_fds:
         if train_model:
-            result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS', seq_name, label_id)
+            result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS_flow', seq_name, label_id)
         else:
-            result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS_parent', seq_name, label_id)
+            result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS_parent_flow', seq_name, label_id)
         # Train parameters
-        parent_path = os.path.join('models_src', 'OSVOS_parent', 'OSVOS_parent.ckpt-50000')
-        logs_path = os.path.join('models_src', seq_name, label_id)
+        parent_path = os.path.join('models_flow', 'OSVOS_parent_vgg', 'OSVOS_parent.ckpt-20000')
+        logs_path = os.path.join('models_flow', seq_name, label_id)
         if train_model:
             max_training_iters = int(sys.argv[2])
 
         # Define Dataset
-        test_frames = sorted(os.listdir(os.path.join(baseDir, 'DAVIS', 'JPEGImages', '480p', seq_name)))
-        test_imgs = [os.path.join(baseDir, 'DAVIS', 'JPEGImages', '480p', seq_name, frame) for frame in test_frames]
+        test_frames = sorted(os.listdir(os.path.join(baseDir, 'DAVIS', 'OpticalFlowVis', '480p', seq_name)))
+        test_imgs = [os.path.join(baseDir, 'DAVIS', 'OpticalFlowVis', '480p', seq_name, frame) for frame in test_frames]
         if train_model:
-            train_imgs = [os.path.join(baseDir, 'DAVIS', 'JPEGImages', '480p', seq_name, '00000.jpg')+' '+
-                          os.path.join(baseDir, 'DAVIS', 'Annotations', '480p_split', seq_name, label_id, '00000.png')]
+            train_imgs = []
+            for i in range(2):
+
+                train_imgs.append(os.path.join(baseDir, 'DAVIS', 'OpticalFlowVis', '480p', seq_name, '00000_next_%d.png' % i)+' '+
+                          os.path.join(baseDir, 'DAVIS', 'Annotations', '480p_split', seq_name, label_id, '00000.png'))
             print train_imgs
             print label_id
             dataset = Dataset(train_imgs, test_imgs, './', data_aug=True, data_aug_scales=[0.5, 0.8, 1])
         else:
             dataset = Dataset(None, test_imgs, './')
         # Train the network
-        if False:#train_model:
+        if train_model:
             # More training parameters
-            learning_rate = 1e-8
-            save_step = max_training_iters
+            learning_rate = 1e-7
             side_supervision = 3
+            save_step = max_training_iters
             display_step = 10
             with tf.Graph().as_default():
                 with tf.device('/gpu:' + str(gpu_id)):
@@ -68,7 +71,7 @@ for seq_name in seq_names:
         with tf.Graph().as_default():
             with tf.device('/gpu:' + str(gpu_id)):
                 if train_model:
-                    checkpoint_path = os.path.join('models_src', seq_name, label_id, seq_name+'.ckpt-'+str(max_training_iters))
+                    checkpoint_path = os.path.join('models_flow', seq_name, label_id, seq_name+'.ckpt-'+str(max_training_iters))
                 else:
                     checkpoint_path = parent_path    
                 osvos.test(dataset, checkpoint_path, result_path)

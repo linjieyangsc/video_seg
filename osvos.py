@@ -633,7 +633,7 @@ def test(dataset, checkpoint_file, result_path, config=None):
     global_step = tf.Variable(0, name='global_step', trainable=False)
 
     # Create a saver to load the network
-    saver = tf.train.Saver([v for v in tf.global_variables() if '-up' not in v.name and '-cr' not in v.name])
+    saver = tf.train.Saver([v for v in tf.global_variables() if '-up' not in v.name]) #if '-up' not in v.name and '-cr' not in v.name])
 
     with tf.Session(config=config) as sess:
         sess.run(tf.global_variables_initializer())
@@ -649,6 +649,8 @@ def test(dataset, checkpoint_file, result_path, config=None):
             res_np = res.astype(np.float32)[0, :, :, 0] > 162.0/255.0
             scipy.misc.imsave(os.path.join(result_path, curr_frame), res_np.astype(np.float32))
             print 'Saving ' + os.path.join(result_path, curr_frame)
-
+            curr_score_name = curr_frame[:-4]
+            np.save(os.path.join(result_path, curr_score_name), res.astype(np.float32)[0,:,:,0])
+            print 'Saving ' + os.path.join(result_path, curr_score_name) + '.npy'
 
 

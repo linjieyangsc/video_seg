@@ -22,7 +22,7 @@ from dataset import Dataset
 os.chdir(root_folder)
 baseDir = '/raid/ljyang/data'
 # User defined parameters
-val_path = os.path.join(baseDir, 'DAVIS/ImageSets/2017/val.txt')
+val_path = os.path.join(baseDir, 'DAVIS/ImageSets/2017/test-dev.txt')
 with open(val_path, 'r') as f:
     seq_names = [line.strip() for line in f]
 for seq_name in seq_names:
@@ -48,11 +48,11 @@ for seq_name in seq_names:
                           os.path.join(baseDir, 'DAVIS', 'Annotations', '480p_split', seq_name, label_id, '00000.png')]
             print train_imgs
             print label_id
-            dataset = Dataset(train_imgs, test_imgs, './', data_aug=True, data_aug_scales=[0.5, 0.8, 1])
+            dataset = Dataset(train_imgs, test_imgs, './', data_aug=True, data_aug_scales=[0.5, 0.8, 1, 1.5])
         else:
             dataset = Dataset(None, test_imgs, './')
         # Train the network
-        if False:#train_model:
+        if train_model:
             # More training parameters
             learning_rate = 1e-8
             save_step = max_training_iters
