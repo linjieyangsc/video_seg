@@ -23,12 +23,13 @@ os.chdir(root_folder)
 baseDir = '/raid/ljyang/data'
 # User defined parameters
 val_path = os.path.join(baseDir, 'DAVIS/ImageSets/2017/test-dev.txt')
-with open(val_path, 'r') as f:
-    seq_names = [line.strip() for line in f]
+#with open(val_path, 'r') as f:
+#    seq_names = [line.strip() for line in f]
+seq_names=['car-race']
 for seq_name in seq_names:
     gpu_id = sys.argv[1]
     train_model = True if len(sys.argv) > 2 else False
-    label_fds = os.listdir(os.path.join(baseDir,'DAVIS/Annotations/480p_split', seq_name))
+    label_fds = ['2']#os.listdir(os.path.join(baseDir,'DAVIS/Annotations/480p_split', seq_name))
     for label_id in label_fds:
         if train_model:
             result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS', seq_name, label_id)
@@ -52,9 +53,12 @@ for seq_name in seq_names:
         else:
             dataset = Dataset(None, test_imgs, './')
         # Train the network
+        checkpoint_path = os.path.join('models_src', seq_name, label_id, seq_name + '.ckpt-' + str(max_training_iters) + '.meta')
+   
         if train_model:
             # More training parameters
-            learning_rate = 1e-8
+            print 'training model for', seq_name
+            learning_rate = 1e-9
             save_step = max_training_iters
             side_supervision = 3
             display_step = 10
@@ -64,11 +68,11 @@ for seq_name in seq_names:
                     osvos.train_finetune(dataset, parent_path, side_supervision, learning_rate, logs_path, max_training_iters,
                                          save_step, display_step, global_step, iter_mean_grad=1, ckpt_name=seq_name)
 
-        # Test the network
-        with tf.Graph().as_default():
-            with tf.device('/gpu:' + str(gpu_id)):
-                if train_model:
-                    checkpoint_path = os.path.join('models_src', seq_name, label_id, seq_name+'.ckpt-'+str(max_training_iters))
-                else:
-                    checkpoint_path = parent_path    
-                osvos.test(dataset, checkpoint_path, result_path)
+            # Test the network
+            with tf.Graph().as_default():
+                with tf.device('/gpu:' + str(gpu_id)):
+                    if train_model:
+                        checkpoint_path = os.path.join('models_src', seq_name, label_id, seq_name+'.ckpt-'+str(max_training_iters))
+                    else:
+                        checkpoint_path = parent_path    
+                    osvos.test(dataset, checkpoint_path, result_path)

@@ -17,8 +17,8 @@ import matplotlib.pyplot as plt
 # Import OSVOS files
 root_folder = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.abspath(root_folder))
-import osvos_multi as osvos
-from dataset import Dataset
+import osvos_multi_with_flow as osvos
+from dataset_with_flow import Dataset
 os.chdir(root_folder)
 baseDir = '/raid/ljyang/data'
 # User defined parameters
@@ -30,30 +30,33 @@ for seq_name in seq_names:
     gpu_id = sys.argv[1]
     train_model = True if len(sys.argv) > 2 else False
     if train_model:
-        result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS_aug1.5_temp', seq_name)
+        result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS_flow_guided', seq_name)
     else:
         result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS_parent', seq_name)
     # Train parameters
     parent_path = os.path.join('models_src', 'OSVOS_parent', 'OSVOS_parent.ckpt-50000')
-    logs_path = os.path.join('models_temp', seq_name)
+    logs_path = os.path.join('models_flow_guided', seq_name)
     if train_model:
         max_training_iters = int(sys.argv[2])
 
     # Define Dataset
-    test_frames = sorted(os.listdir(os.path.join(baseDir, 'DAVIS', 'JPEGImages', '480p', seq_name)))
+    test_frames = sorted(os.listdir(os.path.join(baseDir, 'DAVIS', 'JPEGImages', '480p', seq_name)))[:-1]
     test_imgs = [os.path.join(baseDir, 'DAVIS', 'JPEGImages', '480p', seq_name, frame) for frame in test_frames]
+    test_flows = [os.path.join(baseDir, 'DAVIS', 'OpticalFlowMag', '480p', seq_name, frame[:-4] + '.png') for frame in test_frames]
+    test_imgs = [im_path + ' ' + flow_path for im_path, flow_path in zip(test_imgs, test_flows)]
     # Get class number
     train_im = Image.open(os.path.join(baseDir, 'DAVIS', 'Annotations', '480p', seq_name, '00000.png'))
     cls_n = np.array(train_im).max() + 1
     print 'seq %s has %d classes' % (seq_name, cls_n) 
     if train_model:
         train_imgs = [os.path.join(baseDir, 'DAVIS', 'JPEGImages', '480p', seq_name, '00000.jpg')+' '+
-                      os.path.join(baseDir, 'DAVIS', 'Annotations', '480p', seq_name, '00000.png')]
+                os.path.join(baseDir, 'DAVIS', 'OpticalFlowMag', '480p', seq_name, '00000.png') + ' '+
+                os.path.join(baseDir, 'DAVIS', 'Annotations', '480p', seq_name, '00000.png')]
         dataset = Dataset(train_imgs, test_imgs, './', data_aug=True, data_aug_scales=[0.5, 0.8, 1, 1.5])
     else:
         dataset = Dataset(None, test_imgs, './')
     # Train the network
-    checkpoint_path = os.path.join('models_temp', seq_name, seq_name + '.ckpt-' + str(max_training_iters) + '.meta')
+    checkpoint_path = os.path.join('models_flow_guided', seq_name, seq_name + '.ckpt-' + str(max_training_iters) + '.meta')
    
     if train_model and not os.path.exists(checkpoint_path):
         # More training parameters
@@ -71,7 +74,7 @@ for seq_name in seq_names:
     with tf.Graph().as_default():
         with tf.device('/gpu:' + str(gpu_id)):
             if train_model:
-                checkpoint_path = os.path.join('models_temp', seq_name, seq_name+'.ckpt-'+str(max_training_iters))
+                checkpoint_path = os.path.join('models_flow_guided', seq_name, seq_name+'.ckpt-'+str(max_training_iters))
             else:
                 checkpoint_path = parent_path    
             osvos.test(dataset, checkpoint_path, result_path, n_outputs=cls_n)

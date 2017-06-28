@@ -28,11 +28,7 @@ with open(val_path, 'r') as f:
 for seq_name in seq_names:
     print seq_name
     gpu_id = sys.argv[1]
-    train_model = True if len(sys.argv) > 2 else False
-    if train_model:
-        result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS_aug1.5_temp', seq_name)
-    else:
-        result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS_parent', seq_name)
+    result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS_multi_progressive', seq_name)
     # Train parameters
     parent_path = os.path.join('models_src', 'OSVOS_parent', 'OSVOS_parent.ckpt-50000')
     logs_path = os.path.join('models_temp', seq_name)

@@ -45,7 +45,7 @@ for i, fd in enumerate(fds):
             label_pred_all = label_pred_all > 2
             
             iou_seq += calcIoU(label_gt, label_pred_all)
-        iou_seq /= len(im_list)
+        iou_seq /= len(im_list) - 2 
         iou.append(iou_seq)
 iou = np.array(iou)
 print "iou:", iou.mean()

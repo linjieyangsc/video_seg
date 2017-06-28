@@ -7,7 +7,6 @@ This file is part of the OSVOS paper presented in:
     CVPR 2017
 Please consider citing the paper if you use this code.
 """
-import cv2
 import tensorflow as tf
 import numpy as np
 from tensorflow.contrib.layers.python.layers import utils
@@ -16,7 +15,7 @@ from datetime import datetime
 import os
 import scipy.misc
 from PIL import Image
-from cv2.ximgproc import guidedFilter
+
 slim = tf.contrib.slim
 PALETTE = [0, 0, 0, 128, 0, 0, 0, 128, 0, 128, 128, 0, 0, 0, 128, 128, 0, 128, 0, 128, 128, 128, 128, 128, 64, 0, 0, 191, 0, 0, 64, 128, 0, 191, 128, 0, 64, 0, 128]
 
@@ -62,7 +61,9 @@ def osvos(inputs, n_outputs, scope='osvos'):
     net: Output Tensor of the network
     end_points: Dictionary with all Tensors of the network
     """
-    im_size = tf.shape(inputs)
+    image = inputs[0] # NxMx3
+    flow = inputs[1] # NxM
+    im_size = tf.shape(image)
 
     with tf.variable_scope(scope, 'osvos', [inputs]) as sc:
         end_points_collection = sc.name + '_end_points'
@@ -70,7 +71,7 @@ def osvos(inputs, n_outputs, scope='osvos'):
         with slim.arg_scope([slim.conv2d, slim.max_pool2d],
                             padding='SAME',
                             outputs_collections=end_points_collection):
-            net = slim.repeat(inputs, 2, slim.conv2d, 64, [3, 3], scope='conv1')
+            net = slim.repeat(image, 2, slim.conv2d, 64, [3, 3], scope='conv1')
             net = slim.max_pool2d(net, [2, 2], scope='pool1')
             net_2 = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='conv2')
             net = slim.max_pool2d(net_2, [2, 2], scope='pool2')
@@ -107,8 +108,13 @@ def osvos(inputs, n_outputs, scope='osvos'):
                     utils.collect_named_outputs(end_points_collection, 'osvos/side-multi5-cr', side_5_f)
                 concat_side = tf.concat([side_2_f, side_3_f, side_4_f, side_5_f], axis=3)
 
-                net = slim.conv2d(concat_side, n_outputs, [1, 1], scope='upscore-fuse')
-
+                score1 = slim.conv2d(concat_side, n_outputs, [1, 1], scope='upscore-fuse')
+                utils.collect_named_outputs(end_points_collection, 'osvos/upscore-fuse', score1)
+                conv_flow = slim.repeat(flow, 2, slim.conv2d, 16, [3,3], scope='conv_flow')
+                concat_flow = tf.concat([concat_side, conv_flow], axis=3)
+                utils.collect_named_outputs(end_points_collection, 'osvos/concat-flow', concat_flow)
+                
+                net = slim.conv2d(concat_flow, n_outputs, [1,1], scope='upscore-fuse-flow')
         end_points = slim.utils.convert_collection_to_dict(end_points_collection)
         return net, end_points
 
@@ -160,6 +166,12 @@ def preprocess_img(image):
     # in_ = tf.expand_dims(in_, 0)
     return in_
 
+def preprocess_flow(flow):
+    if type(flow) is not np.ndarray:
+        flow = np.array(Image.open(flow), dtype=np.uint8)
+    flow = flow.astype(np.float32) / 255.0
+    flow = np.expand_dims(np.expand_dims(flow, axis=0), axis=3)
+    return flow
 
 # TO DO: Move preprocessing into Tensorflow
 def preprocess_labels(label):
@@ -370,15 +382,23 @@ def parameter_lr():
     vars_corresp['osvos/score-dsn_4/biases'] = 0.2
     vars_corresp['osvos/score-dsn_5/weights'] = 0.1
     vars_corresp['osvos/score-dsn_5/biases'] = 0.2
+    
+    vars_corresp['osvos/conv_flow/conv_flow_1/weights'] = 1
+    vars_corresp['osvos/conv_flow/conv_flow_1/biases'] = 2
+    vars_corresp['osvos/conv_flow/conv_flow_2/weights'] = 1
+    vars_corresp['osvos/conv_flow/conv_flow_2/biases'] = 2
 
-    vars_corresp['osvos/upscore-fuse/weights'] = 1
-    vars_corresp['osvos/upscore-fuse/biases'] = 2
+
+    vars_corresp['osvos/upscore-fuse/weights'] = 0.1
+    vars_corresp['osvos/upscore-fuse/biases'] = 0.2
+    vars_corresp['osvos/upscore-fuse-flow/weights'] = 0.1
+    vars_corresp['osvos/upscore-fuse-flow/biases'] = 0.2
     return vars_corresp
 
 
 def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
-           global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False, config=None, finetune=1, progressive = 0,
-           test_image_path=None, ckpt_name="osvos", n_outputs=2):
+           global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False, config=None, finetune=1,
+           ckpt_name="osvos", n_outputs=2):
     """Train OSVOS
     Args:
     dataset: Reference to a Dataset object instance
@@ -411,10 +431,10 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     # Prepare the input data
     input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
     input_label = tf.placeholder(tf.int32, [batch_size, None, None])
-
+    input_flow = tf.placeholder(tf.float32, [batch_size, None, None, 1])
     # Create the network
     with slim.arg_scope(osvos_arg_scope()):
-        net, end_points = osvos(input_image, n_outputs)
+        net, end_points = osvos([input_image,input_flow], n_outputs)
 
     # Initialize weights from pre-trained model
     if finetune == 0:
@@ -424,10 +444,13 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     with tf.name_scope('losses'):
 
         main_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=net, labels=input_label)
+        sub_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=end_points['osvos/upscore-fuse'], labels=input_label)
         main_loss = tf.reduce_sum(main_loss)
+        sub_loss = tf.reduce_sum(sub_loss)
         tf.summary.scalar('main_loss', main_loss)
+        tf.summary.scalar('sub_loss', sub_loss)
 
-        output_loss = main_loss
+        output_loss = main_loss + 0.5 * sub_loss
         total_loss = output_loss + tf.add_n(tf.losses.get_regularization_losses())
         tf.summary.scalar('total_loss', total_loss)
 
@@ -494,10 +517,7 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
                 print('Initializing from specified pre-trained model...')
                 # init_weights(sess)
                 var_list = []
-                if progressive == 0:
-                    var_excludes = ['score-dsn','upscore-fuse']
-                else:
-                    var_excludes = []
+                var_excludes = ['score-dsn','upscore-fuse','conv_flow']
                 for var in tf.global_variables():
                     var_type = var.name.split('/')[-1]
                     var_name = var.name
@@ -520,11 +540,12 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
         while step < max_training_iters + 1:
             # Average the gradient
             for _ in range(0, iter_mean_grad):
-                batch_image, batch_label = dataset.next_batch(batch_size, 'train')
+                batch_image, batch_flow, batch_label = dataset.next_batch(batch_size, 'train')
                 image = preprocess_img(batch_image[0])
+                flow = preprocess_flow(batch_flow[0])
                 label = preprocess_labels(batch_label[0])
                 run_res = sess.run([total_loss, merged_summary_op] + grad_accumulator_ops,
-                                   feed_dict={input_image: image, input_label: label})
+                        feed_dict={input_image: image, input_flow: flow, input_label: label})
                 batch_loss = run_res[0]
                 summary = run_res[1]
 
@@ -540,9 +561,9 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
 
             # Save a checkpoint
             if step % save_step == 0:
-                if test_image_path is not None:
-                    curr_output = sess.run(img_summary, feed_dict={input_image: preprocess_img(test_image_path)})
-                    summary_writer.add_summary(curr_output, step)
+                #if test_image_path is not None:
+                #    curr_output = sess.run(img_summary, feed_dict={input_image: preprocess_img(test_image_path), input_flow: preprocess_flow(test_flow_path)})
+                #    summary_writer.add_summary(curr_output, step)
                 save_path = saver.save(sess, model_name, global_step=global_step)
                 print "Model saved in file: %s" % save_path
 
@@ -557,7 +578,7 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
 
 def train_parent(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
                  display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
-                 config=None, test_image_path=None, ckpt_name="osvos"):
+                 config=None, ckpt_name="osvos"):
     """Train OSVOS parent network
     Args:
     See _train()
@@ -565,13 +586,13 @@ def train_parent(dataset, initial_ckpt, supervison, learning_rate, logs_path, ma
     """
     finetune = 0
     _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
-           global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, test_image_path,
+           global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune,
            ckpt_name)
 
 
 def train_finetune(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
                    display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
-                   config=None, test_image_path=None, n_outputs=2, progressive = 0, ckpt_name="osvos"):
+                   config=None, test_image_path=None, n_outputs=2, ckpt_name="osvos"):
     """Finetune OSVOS
     Args:
     See _train()
@@ -579,11 +600,11 @@ def train_finetune(dataset, initial_ckpt, supervison, learning_rate, logs_path, 
     """
     finetune = 1
     _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
-           global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, progressive, test_image_path,
+           global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune,
            ckpt_name, n_outputs)
 
 
-def test(dataset, checkpoint_file, result_path, use_gf=False, n_outputs=2, config=None):
+def test(dataset, checkpoint_file, result_path, n_outputs=2, config=None):
     """Test one sequence
     Args:
     dataset: Reference to a Dataset object instance
@@ -602,23 +623,16 @@ def test(dataset, checkpoint_file, result_path, use_gf=False, n_outputs=2, confi
     # Input data
     batch_size = 1
     input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
-
+    input_flow = tf.placeholder(tf.float32, [batch_size, None, None, 1])
     # Create the cnn
     with slim.arg_scope(osvos_arg_scope()):
-        net, end_points = osvos(input_image, n_outputs)
+        net, end_points = osvos([input_image, input_flow], n_outputs)
     probabilities = tf.nn.softmax(net)
     global_step = tf.Variable(0, name='global_step', trainable=False)
 
     # Create a saver to load the network
     saver = tf.train.Saver([v for v in tf.global_variables() if '-up' not in v.name]) #if '-up' not in v.name and '-cr' not in v.name])
-    #with tf.Session() as sess:
-    #    print 'test'
-    #img, curr_img = dataset.next_batch(batch_size, 'test')
-    #image=img[0]
-    #print "run guided filter"
-    #print image.shape, image.dtype
-    #res_im = guidedFilter(image, image, 20, 1e-6) 
-    #print 'guided filter finished'
+
     with tf.Session(config=config) as sess:
         sess.run(tf.global_variables_initializer())
         sess.run(interp_surgery(tf.global_variables()))
@@ -626,27 +640,14 @@ def test(dataset, checkpoint_file, result_path, use_gf=False, n_outputs=2, confi
         if not os.path.exists(result_path):
             os.makedirs(result_path)
         for frame in range(0, dataset.get_test_size()):
-            img, curr_img = dataset.next_batch(batch_size, 'test')
+            img, flow, curr_img = dataset.next_batch(batch_size, 'test')
+            
             curr_frame = curr_img[0].split('/')[-1].split('.')[0] + '.png'
             image = preprocess_img(img[0])
-            res = sess.run(probabilities, feed_dict={input_image: image})
+            flow = preprocess_flow(flow[0])
+            res = sess.run(probabilities, feed_dict={input_image: image, input_flow: flow})
             #res_np = res.astype(np.float32)[0, :, :, 0] > 162.0/255.0
-            scores = res[0,:,:,:].copy() # HWC
-            print 'scores stats', scores.max(), scores.min()
-            if use_gf:
-                radius = 20
-                eps = 1e-6
-                image_orig  = img[0] if type(img[0]) is np.ndarray else cv2.imread(img[0])
-                print "run guided filter"
-                print image_orig.shape, image_orig.dtype 
-                #res_im = (res_im * 255).astype(np.uint8)
-                print scores.shape, scores.dtype
-                gf=cv2.ximgproc.createGuidedFilter(image_orig, radius, eps)
-                gf.filter(scores, scores)
-                #scores = guidedFilter(image_orig, scores[:,:,0], radius, eps) 
-                print 'guided filter finished'
-            print scores.shape, scores.dtype
-            res_np = np.argmax(scores, axis=2)
+            res_np = np.argmax(res[0,:,:,:], axis=2)
             #scipy.misc.imsave(os.path.join(result_path, curr_frame), res_np.astype(np.uint8))
             # save image with pallete
             res_im = Image.fromarray(res_np.astype(np.uint8), mode="P")
