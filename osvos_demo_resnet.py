@@ -22,6 +22,7 @@ from dataset import Dataset
 os.chdir(root_folder)
 baseDir = '/raid/ljyang/data'
 # User defined parameters
+model_fd = 'models_resnet_50'
 val_path = os.path.join(baseDir, 'DAVIS/ImageSets/2017/val.txt')
 with open(val_path, 'r') as f:
     seq_names = [line.strip() for line in f]
@@ -31,12 +32,12 @@ for seq_name in seq_names:
     label_fds = os.listdir(os.path.join(baseDir,'DAVIS/Annotations/480p_split', seq_name))
     for label_id in label_fds:
         if train_model:
-            result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS', seq_name, label_id)
+            result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS_resnet', seq_name, label_id)
         else:
             result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS_parent', seq_name, label_id)
         # Train parameters
-        parent_path = os.path.join('models_resnet', 'OSVOS_parent', 'OSVOS_parent.ckpt-20000')
-        logs_path = os.path.join('models_resnet', seq_name, label_id)
+        parent_path = os.path.join(model_fd, 'OSVOS_parent', 'OSVOS_parent.ckpt-20000')
+        logs_path = os.path.join(model_fd, seq_name, label_id)
         if train_model:
             max_training_iters = int(sys.argv[2])
 
@@ -54,7 +55,7 @@ for seq_name in seq_names:
         # Train the network
         if train_model:
             # More training parameters
-            learning_rate = 1e-7
+            learning_rate = 1e-2
             side_supervision = 3
             save_step = max_training_iters
             display_step = 10
@@ -62,13 +63,13 @@ for seq_name in seq_names:
                 with tf.device('/gpu:' + str(gpu_id)):
                     global_step = tf.Variable(0, name='global_step', trainable=False)
                     osvos_resnet.train_finetune(dataset, parent_path, side_supervision, learning_rate, logs_path, max_training_iters,
-                                         save_step, display_step, global_step, iter_mean_grad=1, ckpt_name=seq_name)
+                                         save_step, display_step, global_step, instance_norm = True, iter_mean_grad=1, ckpt_name=seq_name)
 
         # Test the network
         with tf.Graph().as_default():
             with tf.device('/gpu:' + str(gpu_id)):
                 if train_model:
-                    checkpoint_path = os.path.join('models_resnet', seq_name, label_id, seq_name+'.ckpt-'+str(max_training_iters))
+                    checkpoint_path = os.path.join(model_fd, seq_name, label_id, seq_name+'.ckpt-'+str(max_training_iters))
                 else:
                     checkpoint_path = parent_path    
-                osvos_resnet.test(dataset, checkpoint_path, result_path)
+                osvos_resnet.test(dataset, checkpoint_path, result_path, instance_norm = True)

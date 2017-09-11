@@ -1,11 +1,5 @@
 """
-Sergi Caelles (scaelles@vision.ee.ethz.ch)
-
-This file is part of the OSVOS paper presented in:
-    Sergi Caelles, Kevis-Kokitsi Maninis, Jordi Pont-Tuset, Laura Leal-Taixe, Daniel Cremers, Luc Van Gool
-    One-Shot Video Object Segmentation
-    CVPR 2017
-Please consider citing the paper if you use this code.
+One-Shot Modulater Network
 """
 import tensorflow as tf
 import numpy as np
@@ -15,12 +9,12 @@ from datetime import datetime
 import os
 import scipy.misc
 from PIL import Image
-from ops import instance_normalization
+from ops import conditional_normalization
 slim = tf.contrib.slim
 
 
-def osvos_arg_scope(weight_decay=0.0002):
-    """Defines the OSVOS arg scope.
+def osmn_arg_scope(weight_decay=0.0002):
+    """Defines the OSMN arg scope.
     Args:
     weight_decay: The l2 regularization coefficient.
     Returns:
@@ -52,26 +46,25 @@ def crop_features(feature, out_size):
     return tf.reshape(slice_input, [int(feature.get_shape()[0]), out_size[1], out_size[2], int(feature.get_shape()[3])])
 
 
-def osvos(inputs, scope='osvos', instance_norm=False):
-    """Defines the OSVOS network
+def osmn(inputs, n_modulator_param = 1472, scope='osmn'):
+    """Defines the OSMN
     Args:
-    inputs: Tensorflow placeholder that contains the input image
+    inputs: Tensorflow placeholder that contains the input image and the first frame masked forground
     scope: Scope name for the network
     Returns:
     net: Output Tensor of the network
     end_points: Dictionary with all Tensors of the network
     """
-    im_size = tf.shape(inputs)
-    normalizer_fn = instance_normalization if instance_norm else None
-    with tf.variable_scope(scope, 'osvos', [inputs]) as sc:
+    guide_im_size = tf.shape(inputs[0])
+    im_size = tf.shape(inputs[1])
+    with tf.variable_scope(scope, [inputs]) as sc:
         end_points_collection = sc.name + '_end_points'
         # Collect outputs of all intermediate layers.
         with slim.arg_scope([slim.conv2d],
-                            padding='SAME', trainable=not instance_norm,
-                            normalizer_fn=normalizer_fn, normalizer_params=None,
+                            padding='SAME',
                             outputs_collections=end_points_collection):
           with slim.arg_scope([slim.max_pool2d], padding='SAME'):
-            net = slim.repeat(inputs, 2, slim.conv2d, 64, [3, 3], scope='conv1')
+            net = slim.repeat(inputs[0], 2, slim.conv2d, 64, [3, 3], scope='conv1')
             net = slim.max_pool2d(net, [2, 2], scope='pool1')
             net_2 = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='conv2')
             net = slim.max_pool2d(net_2, [2, 2], scope='pool2')
@@ -80,51 +73,62 @@ def osvos(inputs, scope='osvos', instance_norm=False):
             net_4 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
             net = slim.max_pool2d(net_4, [2, 2], scope='pool4')
             net_5 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
-
+        #with slim.arg_scope([slim.max_pool2d], padding='VALID'):
+            #net_p = slim.max_pool2d(net_5, [net_5.get_shape()[1], net_5.get_shape()[2]], scope='global_pool')
+            
+            #net_p = tf.squeeze(net_p)
+            net_p = tf.reduce_mean(net_5, [1,2])
+        with slim.arg_scope([slim.fully_connected],
+                    activation_fn = tf.nn.sigmoid):
+            modulator_params = slim.fully_connected(net_p, n_modulator_param, scope='fc') 
+    with tf.variable_scope(scope, [inputs], reuse=True) as sc:
+        end_points_collection = sc.name + '_end_points'
+        # Collect outputs of all intermediate layers.
+        param_id = 0
+        with slim.arg_scope([slim.conv2d],
+                            padding='SAME', trainable = False,
+                            outputs_collections=end_points_collection):
+          with slim.arg_scope([slim.max_pool2d], padding='SAME'):
+            net = slim.repeat(inputs[1], 2, slim.conv2d, 64, [3, 3], scope='conv1')
+            m_params = tf.slice(modulator_params, [0,0], [1,64], name = 'm_param1')
+            net = conditional_normalization(net, m_params, scope='conv1')
+            net = slim.max_pool2d(net, [2, 2], scope='pool1')
+            net_2 = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='conv2')
+            m_params = tf.slice(modulator_params, [0,64], [1,128], name = 'm_param2')
+            net_2 = conditional_normalization(net_2, m_params, scope='conv2')
+            net = slim.max_pool2d(net_2, [2, 2], scope='pool2')
+            net_3 = slim.repeat(net, 3, slim.conv2d, 256, [3, 3], scope='conv3')
+            m_params = tf.slice(modulator_params, [0,192], [1,256], name = 'm_param3')
+            net_3 = conditional_normalization(net_3, m_params, scope='conv3')
+            net = slim.max_pool2d(net_3, [2, 2], scope='pool3')
+            net_4 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
+            m_params = tf.slice(modulator_params, [0,448], [1,512], name = 'm_param4')
+            net_4 = conditional_normalization(net_4, m_params, scope='conv4')
+            net = slim.max_pool2d(net_4, [2, 2], scope='pool4')
+            net_5 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
+            m_params = tf.slice(modulator_params, [0,960], [1,512], name = 'm_param5')
+            net_5 = conditional_normalization(net_5, m_params, scope='conv5')
             # Get side outputs of the network
             with slim.arg_scope([slim.conv2d],
-                                activation_fn=None, trainable=not instance_norm,
-                                normalizer_fn=normalizer_fn, normalizer_params=None):
+                                activation_fn=None):
                 side_2 = slim.conv2d(net_2, 16, [3, 3], scope='conv2_2_16')
                 side_3 = slim.conv2d(net_3, 16, [3, 3], scope='conv3_3_16')
                 side_4 = slim.conv2d(net_4, 16, [3, 3], scope='conv4_3_16')
                 side_5 = slim.conv2d(net_5, 16, [3, 3], scope='conv5_3_16')
 
-                # Supervise side outputs
-                side_2_s = slim.conv2d(side_2, 1, [1, 1], scope='score-dsn_2')
-                side_3_s = slim.conv2d(side_3, 1, [1, 1], scope='score-dsn_3')
-                side_4_s = slim.conv2d(side_4, 1, [1, 1], scope='score-dsn_4')
-                side_5_s = slim.conv2d(side_5, 1, [1, 1], scope='score-dsn_5')
                 with slim.arg_scope([slim.convolution2d_transpose],
                                     activation_fn=None, biases_initializer=None, padding='VALID',
                                     outputs_collections=end_points_collection, trainable=False):
-                    # Side outputs
-                    side_2_s = slim.convolution2d_transpose(side_2_s, 1, 4, 2, scope='score-dsn_2-up')
-                    side_2_s = crop_features(side_2_s, im_size)
-                    utils.collect_named_outputs(end_points_collection, 'osvos/score-dsn_2-cr', side_2_s)
-                    side_3_s = slim.convolution2d_transpose(side_3_s, 1, 8, 4, scope='score-dsn_3-up')
-                    side_3_s = crop_features(side_3_s, im_size)
-                    utils.collect_named_outputs(end_points_collection, 'osvos/score-dsn_3-cr', side_3_s)
-                    side_4_s = slim.convolution2d_transpose(side_4_s, 1, 16, 8, scope='score-dsn_4-up')
-                    side_4_s = crop_features(side_4_s, im_size)
-                    utils.collect_named_outputs(end_points_collection, 'osvos/score-dsn_4-cr', side_4_s)
-                    side_5_s = slim.convolution2d_transpose(side_5_s, 1, 32, 16, scope='score-dsn_5-up')
-                    side_5_s = crop_features(side_5_s, im_size)
-                    utils.collect_named_outputs(end_points_collection, 'osvos/score-dsn_5-cr', side_5_s)
-
+                    
                     # Main output
                     side_2_f = slim.convolution2d_transpose(side_2, 16, 4, 2, scope='score-multi2-up')
                     side_2_f = crop_features(side_2_f, im_size)
-                    utils.collect_named_outputs(end_points_collection, 'osvos/side-multi2-cr', side_2_f)
                     side_3_f = slim.convolution2d_transpose(side_3, 16, 8, 4, scope='score-multi3-up')
                     side_3_f = crop_features(side_3_f, im_size)
-                    utils.collect_named_outputs(end_points_collection, 'osvos/side-multi3-cr', side_3_f)
                     side_4_f = slim.convolution2d_transpose(side_4, 16, 16, 8, scope='score-multi4-up')
                     side_4_f = crop_features(side_4_f, im_size)
-                    utils.collect_named_outputs(end_points_collection, 'osvos/side-multi4-cr', side_4_f)
                     side_5_f = slim.convolution2d_transpose(side_5, 16, 32, 16, scope='score-multi5-up')
                     side_5_f = crop_features(side_5_f, im_size)
-                    utils.collect_named_outputs(end_points_collection, 'osvos/side-multi5-cr', side_5_f)
                 concat_side = tf.concat([side_2_f, side_3_f, side_4_f, side_5_f], axis=3)
                 with slim.arg_scope([slim.conv2d],
                                     trainable=True, normalizer_fn=None):
@@ -161,7 +165,6 @@ def interp_surgery(variables):
             tmp[range(m), range(k), :, :] = up_filter
             interp_tensors.append(tf.assign(v, tmp.transpose((2, 3, 1, 0)), validate_shape=True, use_locking=True))
     return interp_tensors
-
 
 # TO DO: Move preprocessing into Tensorflow
 def preprocess_img(image):
@@ -200,6 +203,30 @@ def preprocess_labels(label):
     # label = tf.expand_dims(tf.expand_dims(label, 0), 3)
     return label
 
+def masked_image(image, label):
+    masked = np.zeros((image.shape))
+    label = label[:,:,:,0]
+    for ch in range(image.shape[3]):
+        masked[label > 0, ch] = image[label > 0, ch]
+    return masked
+
+def load_vgg_fg_model(ckpt_path):
+    """Initialize the network parameters from a general-purpose foreground segmentation model
+    Args:
+    Path to the checkpoint
+    Returns:
+    Function that takes a session and initilaizes the network
+    """
+    reader = tf.train.NewCheckpointReader(ckpt_path)
+    var_to_shape_map = reader.get_variable_to_shape_map()
+    vars_corresp = dict()
+    for v in var_to_shape_map:
+        if "conv" in v:
+            vars_corresp[v] = slim.get_model_variables(v.replace("osvos", "osmn"))[0]
+    init_fn = slim.assign_from_checkpoint_fn(
+            ckpt_path,
+            vars_corresp)
+    return init_fn
 
 def load_vgg_imagenet(ckpt_path):
     """Initialize the network parameters from the VGG-16 pre-trained model provided by TF-SLIM
@@ -272,135 +299,12 @@ def class_balanced_cross_entropy_loss_theoretical(output, label):
     return final_loss
 
 
-def load_caffe_weights(weights_path):
-    """Initialize the network parameters from a .npy caffe weights file
-    Args:
-    Path to the .npy file containing the value of the network parameters
-    Returns:
-    Function that takes a session and initializes the network
-    """
-    osvos_weights = np.load(weights_path).item()
-    vars_corresp = dict()
-    vars_corresp['osvos/conv1/conv1_1/weights'] = osvos_weights['conv1_1_w']
-    vars_corresp['osvos/conv1/conv1_1/biases'] = osvos_weights['conv1_1_b']
-    vars_corresp['osvos/conv1/conv1_2/weights'] = osvos_weights['conv1_2_w']
-    vars_corresp['osvos/conv1/conv1_2/biases'] = osvos_weights['conv1_2_b']
-
-    vars_corresp['osvos/conv2/conv2_1/weights'] = osvos_weights['conv2_1_w']
-    vars_corresp['osvos/conv2/conv2_1/biases'] = osvos_weights['conv2_1_b']
-    vars_corresp['osvos/conv2/conv2_2/weights'] = osvos_weights['conv2_2_w']
-    vars_corresp['osvos/conv2/conv2_2/biases'] = osvos_weights['conv2_2_b']
-
-    vars_corresp['osvos/conv3/conv3_1/weights'] = osvos_weights['conv3_1_w']
-    vars_corresp['osvos/conv3/conv3_1/biases'] = osvos_weights['conv3_1_b']
-    vars_corresp['osvos/conv3/conv3_2/weights'] = osvos_weights['conv3_2_w']
-    vars_corresp['osvos/conv3/conv3_2/biases'] = osvos_weights['conv3_2_b']
-    vars_corresp['osvos/conv3/conv3_3/weights'] = osvos_weights['conv3_3_w']
-    vars_corresp['osvos/conv3/conv3_3/biases'] = osvos_weights['conv3_3_b']
-
-    vars_corresp['osvos/conv4/conv4_1/weights'] = osvos_weights['conv4_1_w']
-    vars_corresp['osvos/conv4/conv4_1/biases'] = osvos_weights['conv4_1_b']
-    vars_corresp['osvos/conv4/conv4_2/weights'] = osvos_weights['conv4_2_w']
-    vars_corresp['osvos/conv4/conv4_2/biases'] = osvos_weights['conv4_2_b']
-    vars_corresp['osvos/conv4/conv4_3/weights'] = osvos_weights['conv4_3_w']
-    vars_corresp['osvos/conv4/conv4_3/biases'] = osvos_weights['conv4_3_b']
-
-    vars_corresp['osvos/conv5/conv5_1/weights'] = osvos_weights['conv5_1_w']
-    vars_corresp['osvos/conv5/conv5_1/biases'] = osvos_weights['conv5_1_b']
-    vars_corresp['osvos/conv5/conv5_2/weights'] = osvos_weights['conv5_2_w']
-    vars_corresp['osvos/conv5/conv5_2/biases'] = osvos_weights['conv5_2_b']
-    vars_corresp['osvos/conv5/conv5_3/weights'] = osvos_weights['conv5_3_w']
-    vars_corresp['osvos/conv5/conv5_3/biases'] = osvos_weights['conv5_3_b']
-
-    vars_corresp['osvos/conv2_2_16/weights'] = osvos_weights['conv2_2_16_w']
-    vars_corresp['osvos/conv2_2_16/biases'] = osvos_weights['conv2_2_16_b']
-    vars_corresp['osvos/conv3_3_16/weights'] = osvos_weights['conv3_3_16_w']
-    vars_corresp['osvos/conv3_3_16/biases'] = osvos_weights['conv3_3_16_b']
-    vars_corresp['osvos/conv4_3_16/weights'] = osvos_weights['conv4_3_16_w']
-    vars_corresp['osvos/conv4_3_16/biases'] = osvos_weights['conv4_3_16_b']
-    vars_corresp['osvos/conv5_3_16/weights'] = osvos_weights['conv5_3_16_w']
-    vars_corresp['osvos/conv5_3_16/biases'] = osvos_weights['conv5_3_16_b']
-
-    vars_corresp['osvos/score-dsn_2/weights'] = osvos_weights['score-dsn_2_w']
-    vars_corresp['osvos/score-dsn_2/biases'] = osvos_weights['score-dsn_2_b']
-    vars_corresp['osvos/score-dsn_3/weights'] = osvos_weights['score-dsn_3_w']
-    vars_corresp['osvos/score-dsn_3/biases'] = osvos_weights['score-dsn_3_b']
-    vars_corresp['osvos/score-dsn_4/weights'] = osvos_weights['score-dsn_4_w']
-    vars_corresp['osvos/score-dsn_4/biases'] = osvos_weights['score-dsn_4_b']
-    vars_corresp['osvos/score-dsn_5/weights'] = osvos_weights['score-dsn_5_w']
-    vars_corresp['osvos/score-dsn_5/biases'] = osvos_weights['score-dsn_5_b']
-
-    vars_corresp['osvos/upscore-fuse/weights'] = osvos_weights['new-score-weighting_w']
-    vars_corresp['osvos/upscore-fuse/biases'] = osvos_weights['new-score-weighting_b']
-    return slim.assign_from_values_fn(vars_corresp)
 
 
-def parameter_lr():
-    """Specify the relative learning rate for every parameter. The final learning rate
-    in every parameter will be the one defined here multiplied by the global one
-    Args:
-    Returns:
-    Dictionary with the relative learning rate for every parameter
-    """
 
-    vars_corresp = dict()
-    vars_corresp['osvos/conv1/conv1_1/weights'] = 1
-    vars_corresp['osvos/conv1/conv1_1/biases'] = 2
-    vars_corresp['osvos/conv1/conv1_2/weights'] = 1
-    vars_corresp['osvos/conv1/conv1_2/biases'] = 2
-
-    vars_corresp['osvos/conv2/conv2_1/weights'] = 1
-    vars_corresp['osvos/conv2/conv2_1/biases'] = 2
-    vars_corresp['osvos/conv2/conv2_2/weights'] = 1
-    vars_corresp['osvos/conv2/conv2_2/biases'] = 2
-
-    vars_corresp['osvos/conv3/conv3_1/weights'] = 1
-    vars_corresp['osvos/conv3/conv3_1/biases'] = 2
-    vars_corresp['osvos/conv3/conv3_2/weights'] = 1
-    vars_corresp['osvos/conv3/conv3_2/biases'] = 2
-    vars_corresp['osvos/conv3/conv3_3/weights'] = 1
-    vars_corresp['osvos/conv3/conv3_3/biases'] = 2
-
-    vars_corresp['osvos/conv4/conv4_1/weights'] = 1
-    vars_corresp['osvos/conv4/conv4_1/biases'] = 2
-    vars_corresp['osvos/conv4/conv4_2/weights'] = 1
-    vars_corresp['osvos/conv4/conv4_2/biases'] = 2
-    vars_corresp['osvos/conv4/conv4_3/weights'] = 1
-    vars_corresp['osvos/conv4/conv4_3/biases'] = 2
-
-    vars_corresp['osvos/conv5/conv5_1/weights'] = 1
-    vars_corresp['osvos/conv5/conv5_1/biases'] = 2
-    vars_corresp['osvos/conv5/conv5_2/weights'] = 1
-    vars_corresp['osvos/conv5/conv5_2/biases'] = 2
-    vars_corresp['osvos/conv5/conv5_3/weights'] = 1
-    vars_corresp['osvos/conv5/conv5_3/biases'] = 2
-
-    vars_corresp['osvos/conv2_2_16/weights'] = 1
-    vars_corresp['osvos/conv2_2_16/biases'] = 2
-    vars_corresp['osvos/conv3_3_16/weights'] = 1
-    vars_corresp['osvos/conv3_3_16/biases'] = 2
-    vars_corresp['osvos/conv4_3_16/weights'] = 1
-    vars_corresp['osvos/conv4_3_16/biases'] = 2
-    vars_corresp['osvos/conv5_3_16/weights'] = 1
-    vars_corresp['osvos/conv5_3_16/biases'] = 2
-
-    vars_corresp['osvos/score-dsn_2/weights'] = 0.1
-    vars_corresp['osvos/score-dsn_2/biases'] = 0.2
-    vars_corresp['osvos/score-dsn_3/weights'] = 0.1
-    vars_corresp['osvos/score-dsn_3/biases'] = 0.2
-    vars_corresp['osvos/score-dsn_4/weights'] = 0.1
-    vars_corresp['osvos/score-dsn_4/biases'] = 0.2
-    vars_corresp['osvos/score-dsn_5/weights'] = 0.1
-    vars_corresp['osvos/score-dsn_5/biases'] = 0.2
-
-    vars_corresp['osvos/upscore-fuse/weights'] = 0.01
-    vars_corresp['osvos/upscore-fuse/biases'] = 0.02
-    return vars_corresp
-
-
-def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
-           global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, instance_norm=False, resume_training=False, config=None, finetune=1,
-           test_image_path=None, ckpt_name="osvos"):
+def _train(dataset, initial_ckpt, learning_rate, logs_path, max_training_iters, save_step, display_step,
+           global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False, config=None, finetune=1,
+           test_image_path=None, ckpt_name="osmn"):
     """Train OSVOS
     Args:
     dataset: Reference to a Dataset object instance
@@ -431,41 +335,27 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     tf.logging.set_verbosity(tf.logging.INFO)
 
     # Prepare the input data
+    guide_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
     input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
     input_label = tf.placeholder(tf.float32, [batch_size, None, None, 1])
 
     # Create the network
-    with slim.arg_scope(osvos_arg_scope()):
-        net, end_points = osvos(input_image, instance_norm=instance_norm)
+    with slim.arg_scope(osmn_arg_scope()):
+        net, end_points = osmn([guide_image, input_image])
 
     # Initialize weights from pre-trained model
     if finetune == 0:
         init_weights = load_vgg_imagenet(initial_ckpt)
+    else:
+        init_weights = load_vgg_fg_model(initial_ckpt)
 
     # Define loss
     with tf.name_scope('losses'):
-        if supervison == 1 or supervison == 2:
-            dsn_2_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_2-cr'], input_label)
-            tf.summary.scalar('dsn_2_loss', dsn_2_loss)
-            dsn_3_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_3-cr'], input_label)
-            tf.summary.scalar('dsn_3_loss', dsn_3_loss)
-            dsn_4_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_4-cr'], input_label)
-            tf.summary.scalar('dsn_4_loss', dsn_4_loss)
-            dsn_5_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_5-cr'], input_label)
-            tf.summary.scalar('dsn_5_loss', dsn_5_loss)
 
         main_loss = class_balanced_cross_entropy_loss(net, input_label)
         tf.summary.scalar('main_loss', main_loss)
 
-        if supervison == 1:
-            output_loss = dsn_2_loss + dsn_3_loss + dsn_4_loss + dsn_5_loss + main_loss
-        elif supervison == 2:
-            output_loss = 0.5 * dsn_2_loss + 0.5 * dsn_3_loss + 0.5 * dsn_4_loss + 0.5 * dsn_5_loss + main_loss
-        elif supervison == 3:
-            output_loss = main_loss
-        else:
-            sys.exit('Incorrect supervision id, select 1 for supervision of the side outputs, 2 for weak supervision '
-                     'of the side outputs and 3 for no supervision of the side outputs')
+        output_loss = main_loss
         total_loss = output_loss + tf.add_n(tf.losses.get_regularization_losses())
         tf.summary.scalar('total_loss', total_loss)
 
@@ -480,12 +370,11 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
                 if grads_and_vars[ind][0] is not None:
                     grad_accumulator[ind] = tf.ConditionalAccumulator(grads_and_vars[ind][0].dtype)
         with tf.name_scope('apply_gradient'):
-            layer_lr = parameter_lr()
             grad_accumulator_ops = []
             for var_ind, grad_acc in grad_accumulator.iteritems():
                 var_name = str(grads_and_vars[var_ind][1].name).split(':')[0]
                 var_grad = grads_and_vars[var_ind][0]
-                grad_accumulator_ops.append(grad_acc.apply_grad(var_grad * layer_lr.get(var_name, 1),
+                grad_accumulator_ops.append(grad_acc.apply_grad(var_grad,
                                                                 local_step=global_step))
         with tf.name_scope('take_gradients'):
             mean_grads_and_vars = []
@@ -529,15 +418,8 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
                 print('Initializing from pre-trained imagenet model...')
                 init_weights(sess)
             else:
-                print('Initializing from specified pre-trained model...')
-                # init_weights(sess)
-                var_list = []
-                for var in tf.global_variables():
-                    var_type = var.name.split('/')[-1]
-                    if 'weights' in var_type or 'bias' in var_type:
-                        var_list.append(var)
-                saver_res = tf.train.Saver(var_list=var_list)
-                saver_res.restore(sess, initial_ckpt)
+                print('Initializing from foreground model...')
+                init_weights(sess)
             step = 1
         sess.run(interp_surgery(tf.global_variables()))
         print('Weights initialized')
@@ -546,11 +428,15 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
         while step < max_training_iters + 1:
             # Average the gradient
             for _ in range(0, iter_mean_grad):
-                batch_image, batch_label = dataset.next_batch(batch_size, 'train')
+                batch_g_image, batch_g_label, batch_image, batch_label = dataset.next_batch(batch_size, 'train')
                 image = preprocess_img(batch_image[0])
                 label = preprocess_labels(batch_label[0])
+                g_image = preprocess_img(batch_g_image[0])
+                g_label = preprocess_labels(batch_g_label[0])
+                masked_g_image = masked_image(g_image, g_label)
                 run_res = sess.run([total_loss, merged_summary_op] + grad_accumulator_ops,
-                                   feed_dict={input_image: image, input_label: label})
+                        feed_dict={guide_image: masked_g_image, 
+                        input_image: image, input_label: label})
                 batch_loss = run_res[0]
                 summary = run_res[1]
 
@@ -581,35 +467,22 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
         print('Finished training.')
 
 
-def train_parent(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
-                 display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
-                 config=None, test_image_path=None, ckpt_name="osvos"):
-    """Train OSVOS parent network
-    Args:
-    See _train()
-    Returns:
-    """
-    finetune = 0
-    _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
-           global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, test_image_path,
-           ckpt_name)
 
-
-def train_finetune(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
+def train_finetune(dataset, initial_ckpt, learning_rate, logs_path, max_training_iters, save_step,
                    display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
-                   config=None, instance_norm=False, test_image_path=None, ckpt_name="osvos"):
+                   config=None, instance_norm=False, test_image_path=None, ckpt_name="osmn"):
     """Finetune OSVOS
     Args:
     See _train()
     Returns:
     """
     finetune = 1
-    _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
-           global_step, iter_mean_grad, batch_size, momentum, instance_norm, resume_training, config, finetune, test_image_path,
+    _train(dataset, initial_ckpt, learning_rate, logs_path, max_training_iters, save_step, display_step,
+           global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, test_image_path,
            ckpt_name)
 
 
-def test(dataset, checkpoint_file, result_path, instance_norm=False, config=None):
+def test(dataset, checkpoint_file, result_path, config=None):
     """Test one sequence
     Args:
     dataset: Reference to a Dataset object instance
@@ -627,11 +500,12 @@ def test(dataset, checkpoint_file, result_path, instance_norm=False, config=None
 
     # Input data
     batch_size = 1
+    guide_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
     input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
 
     # Create the cnn
     with slim.arg_scope(osvos_arg_scope()):
-        net, end_points = osvos(input_image, instance_norm=instance_norm)
+        net, end_points = osmn([guide_image, input_image])
     probabilities = tf.nn.sigmoid(net)
     global_step = tf.Variable(0, name='global_step', trainable=False)
 
@@ -645,11 +519,14 @@ def test(dataset, checkpoint_file, result_path, instance_norm=False, config=None
         if not os.path.exists(result_path):
             os.makedirs(result_path)
         for frame in range(0, dataset.get_test_size()):
-            img, curr_img = dataset.next_batch(batch_size, 'test')
+            guide_img, guide_label, img, curr_img = dataset.next_batch(batch_size, 'test')
             curr_frame = curr_img[0].split('/')[-1].split('.')[0] + '.png'
             image = preprocess_img(img[0])
-            res = sess.run(probabilities, feed_dict={input_image: image})
-            res_np = res.astype(np.float32)[0, :, :, 0] > 162.0/255.0
+            guide_image = preprocess_img(guide_img[0])
+            guide_label = preprocess_label(guide_label[0])
+            guide_image = masked_image(guide_image, guide_label)
+            res = sess.run(probabilities, feed_dict={guide_image:guide_image, input_image: image})
+            res_np = res.astype(np.float32)[0, :, :, 0] > 0.5
             scipy.misc.imsave(os.path.join(result_path, curr_frame), res_np.astype(np.float32))
             print 'Saving ' + os.path.join(result_path, curr_frame)
             curr_score_name = curr_frame[:-4]

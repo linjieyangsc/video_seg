@@ -14,7 +14,7 @@ slim = tf.contrib.slim
 # Import OSVOS files
 root_folder = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.abspath(root_folder))
-import osvos_resnet_50 as osvos_resnet
+import osvos_resnet as osvos_resnet
 from dataset import Dataset
 
 # User defined parameters
@@ -32,7 +32,6 @@ data_aug = True
 iter_mean_grad = 10
 max_training_iters = 20000
 save_step = 5000
-test_image = None
 display_step = 100
 ini_learning_rate = 1e-8
 boundaries = [10000, 20000]
@@ -42,6 +41,7 @@ values = [ini_learning_rate, ini_learning_rate * 0.1]
 train_file = 'train_parent_list.txt'
 val_file = 'val_list.txt'
 dataset_path = '/raid/ljyang/data/DAVIS'
+test_image =os.path.join(dataset_path, 'JPEGImages/480p/blackswan/00000.jpg')
 dataset = Dataset(train_file, val_file, dataset_path, store_memory=store_memory, data_aug=data_aug)
 # 
 # Train the network

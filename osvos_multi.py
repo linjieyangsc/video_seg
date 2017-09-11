@@ -15,6 +15,7 @@ import sys
 from datetime import datetime
 import os
 import scipy.misc
+from ops import instance_normalization
 from PIL import Image
 from cv2.ximgproc import guidedFilter
 slim = tf.contrib.slim
@@ -53,7 +54,7 @@ def crop_features(feature, out_size):
     return tf.reshape(slice_input, [int(feature.get_shape()[0]), out_size[1], out_size[2], int(feature.get_shape()[3])])
 
 
-def osvos(inputs, n_outputs, scope='osvos'):
+def osvos(inputs, n_outputs, scope='osvos', instance_norm=False):
     """Defines the OSVOS network
     Args:
     inputs: Tensorflow placeholder that contains the input image
@@ -63,13 +64,15 @@ def osvos(inputs, n_outputs, scope='osvos'):
     end_points: Dictionary with all Tensors of the network
     """
     im_size = tf.shape(inputs)
-
+    normalizer_fn = instance_normalization if instance_norm else None
     with tf.variable_scope(scope, 'osvos', [inputs]) as sc:
         end_points_collection = sc.name + '_end_points'
         # Collect outputs of all intermediate layers.
-        with slim.arg_scope([slim.conv2d, slim.max_pool2d],
-                            padding='SAME',
+        with slim.arg_scope([slim.conv2d],
+                            padding='SAME', trainable = not instance_norm,
+                            normalizer_fn = normalizer_fn, normalizer_params=None,
                             outputs_collections=end_points_collection):
+          with slim.arg_scope([slim.max_pool2d], padding='SAME'):
             net = slim.repeat(inputs, 2, slim.conv2d, 64, [3, 3], scope='conv1')
             net = slim.max_pool2d(net, [2, 2], scope='pool1')
             net_2 = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='conv2')
@@ -82,7 +85,8 @@ def osvos(inputs, n_outputs, scope='osvos'):
 
             # Get side outputs of the network
             with slim.arg_scope([slim.conv2d],
-                                activation_fn=None):
+                                activation_fn=None, trainable=not instance_norm,
+                                normalizer_fn=normalizer_fn, normalizer_params=None):
                 side_2 = slim.conv2d(net_2, 16, [3, 3], scope='conv2_2_16')
                 side_3 = slim.conv2d(net_3, 16, [3, 3], scope='conv3_3_16')
                 side_4 = slim.conv2d(net_4, 16, [3, 3], scope='conv4_3_16')
@@ -106,8 +110,9 @@ def osvos(inputs, n_outputs, scope='osvos'):
                     side_5_f = crop_features(side_5_f, im_size)
                     utils.collect_named_outputs(end_points_collection, 'osvos/side-multi5-cr', side_5_f)
                 concat_side = tf.concat([side_2_f, side_3_f, side_4_f, side_5_f], axis=3)
-
-                net = slim.conv2d(concat_side, n_outputs, [1, 1], scope='upscore-fuse')
+                with slim.arg_scope([slim.conv2d],
+                                    trainable = True, normalizer_fn=None):
+                    net = slim.conv2d(concat_side, n_outputs, [1, 1], scope='upscore-fuse')
 
         end_points = slim.utils.convert_collection_to_dict(end_points_collection)
         return net, end_points
@@ -377,7 +382,7 @@ def parameter_lr():
 
 
 def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
-           global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False, config=None, finetune=1, progressive = 0,
+           global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, instance_norm=False, resume_training=False, config=None, finetune=1, progressive = 0,
            test_image_path=None, ckpt_name="osvos", n_outputs=2):
     """Train OSVOS
     Args:
@@ -414,7 +419,7 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
 
     # Create the network
     with slim.arg_scope(osvos_arg_scope()):
-        net, end_points = osvos(input_image, n_outputs)
+        net, end_points = osvos(input_image, n_outputs, instance_norm=instance_norm)
 
     # Initialize weights from pre-trained model
     if finetune == 0:
@@ -434,7 +439,7 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     # Define optimization method
     with tf.name_scope('optimization'):
         tf.summary.scalar('learning_rate', learning_rate)
-        optimizer = tf.train.MomentumOptimizer(learning_rate, momentum)
+        optimizer = tf.train.AdamOptimizer(learning_rate)
         grads_and_vars = optimizer.compute_gradients(total_loss)
         with tf.name_scope('grad_accumulator'):
             grad_accumulator = {}
@@ -447,7 +452,7 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
             for var_ind, grad_acc in grad_accumulator.iteritems():
                 var_name = str(grads_and_vars[var_ind][1].name).split(':')[0]
                 var_grad = grads_and_vars[var_ind][0]
-                grad_accumulator_ops.append(grad_acc.apply_grad(var_grad * layer_lr[var_name],
+                grad_accumulator_ops.append(grad_acc.apply_grad(var_grad * layer_lr.get(var_name, 1),
                                                                 local_step=global_step))
         with tf.name_scope('take_gradients'):
             mean_grads_and_vars = []
@@ -500,12 +505,11 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
                     var_excludes = []
                 for var in tf.global_variables():
                     var_type = var.name.split('/')[-1]
-                    var_name = var.name
                     if 'weights' in var_type or 'bias' in var_type:
                         exclude = False
                         for item in var_excludes:
-                            if item in var_name:
-                                print var_name
+                            if item in var.name:
+                                print var.name
                                 exclude=True
                                 break
                         if not exclude:
@@ -571,7 +575,7 @@ def train_parent(dataset, initial_ckpt, supervison, learning_rate, logs_path, ma
 
 def train_finetune(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
                    display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
-                   config=None, test_image_path=None, n_outputs=2, progressive = 0, ckpt_name="osvos"):
+                   config=None, instance_norm=False, test_image_path=None, n_outputs=2, progressive = 0, ckpt_name="osvos"):
     """Finetune OSVOS
     Args:
     See _train()
@@ -579,11 +583,11 @@ def train_finetune(dataset, initial_ckpt, supervison, learning_rate, logs_path, 
     """
     finetune = 1
     _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
-           global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, progressive, test_image_path,
+           global_step, iter_mean_grad, batch_size, momentum, instance_norm, resume_training, config, finetune, progressive, test_image_path,
            ckpt_name, n_outputs)
 
 
-def test(dataset, checkpoint_file, result_path, use_gf=False, n_outputs=2, config=None):
+def test(dataset, checkpoint_file, result_path, use_gf=False, n_outputs=2, instance_norm=False, config=None):
     """Test one sequence
     Args:
     dataset: Reference to a Dataset object instance
@@ -605,20 +609,13 @@ def test(dataset, checkpoint_file, result_path, use_gf=False, n_outputs=2, confi
 
     # Create the cnn
     with slim.arg_scope(osvos_arg_scope()):
-        net, end_points = osvos(input_image, n_outputs)
+        net, end_points = osvos(input_image, n_outputs, instance_norm=instance_norm)
     probabilities = tf.nn.softmax(net)
     global_step = tf.Variable(0, name='global_step', trainable=False)
 
     # Create a saver to load the network
     saver = tf.train.Saver([v for v in tf.global_variables() if '-up' not in v.name]) #if '-up' not in v.name and '-cr' not in v.name])
-    #with tf.Session() as sess:
-    #    print 'test'
-    #img, curr_img = dataset.next_batch(batch_size, 'test')
-    #image=img[0]
-    #print "run guided filter"
-    #print image.shape, image.dtype
-    #res_im = guidedFilter(image, image, 20, 1e-6) 
-    #print 'guided filter finished'
+    
     with tf.Session(config=config) as sess:
         sess.run(tf.global_variables_initializer())
         sess.run(interp_surgery(tf.global_variables()))

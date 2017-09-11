@@ -19,7 +19,7 @@ def calcIoU(gt, pred):
     return ious
 
 gt_path = '/raid/ljyang/data/DAVIS/Annotations/480p'
-pred_path = 'DAVIS/Results/Segmentations/480p/OSVOS_flow_guided'
+pred_path = 'DAVIS/Results/Segmentations/480p/OSVOS'
 listFile = '/raid/ljyang/data/DAVIS/ImageSets/2017/val.txt'
 with open(listFile, 'r') as f:
     fds = [line.strip() for line in f]

@@ -18,7 +18,7 @@ from PIL import Image
 sys.path.append('../tensorflow-models/slim')
 from nets import resnet_v2
 slim = tf.contrib.slim
-
+from ops import instance_normalization
 
 def crop_features(feature, out_size):
     """Crop the center of a feature map
@@ -36,7 +36,7 @@ def crop_features(feature, out_size):
     return tf.reshape(slice_input, [int(feature.get_shape()[0]), out_size[1], out_size[2], int(feature.get_shape()[3])])
 
 
-def osvos(inputs):
+def osvos(inputs, instance_norm=False):
     """Defines the OSVOS network
     Args:
     inputs: Tensorflow placeholder that contains the input image
@@ -46,16 +46,19 @@ def osvos(inputs):
     end_points: Dictionary with all Tensors of the network
     """
     im_size = tf.shape(inputs)
+    normalizer_fn = instance_normalization if instance_norm else None
     with slim.arg_scope(resnet_v2.resnet_arg_scope()):
-        net, end_points = resnet_v2.resnet_v2_101(inputs, None, is_training=False,
+      with slim.arg_scope([slim.conv2d],
+                            trainable= not instance_norm):
+        net, end_points = resnet_v2.resnet_v2_50(inputs, None, is_training=False,
                         global_pool=False, spatial_squeeze=False, output_stride = 8)
         #end_points_collection = slim.utils.convert_dict_to_collection(end_points)
         with slim.arg_scope([slim.convolution2d_transpose],
                             activation_fn=None, biases_initializer=None, padding='VALID',
-                             trainable=True):
+                             trainable=not instance_norm):
             with slim.arg_scope([slim.conv2d], activation_fn=None, 
-                      normalizer_fn=None, padding='SAME'):
-                scores = slim.conv2d(net, 16, [1,1], scope ='score')
+                      normalizer_fn=None, trainable=not instance_norm, padding='SAME'):
+                scores = slim.conv2d(net, 64, [1,1], scope ='score')
                 scores_up = slim.convolution2d_transpose(scores, 1, 16, 8, scope='score-up')
                 scores_crop = crop_features(scores_up, im_size)
                 net = scores_crop
@@ -128,7 +131,7 @@ def preprocess_labels(label):
     # label = tf.cast(np.array(label), tf.float32)
     # max_mask = tf.multiply(tf.reduce_max(label), 0.5)
     # label = tf.cast(tf.greater(label, max_mask), tf.float32)
-    # label = tf.expand_dims(tf.expand_dims(label, 0), 3)
+    # label = tf.expan`d_dims(tf.expand_dims(label, 0), 3)
     return label
 
 
@@ -221,7 +224,7 @@ def class_balanced_cross_entropy_loss_theoretical(output, label):
 
 
 def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
-           global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False, config=None, finetune=1,
+           global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, instance_norm=False, resume_training=False, config=None, finetune=1,
            test_image_path=None, ckpt_name="osvos"):
     """Train OSVOS
     Args:
@@ -257,7 +260,7 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     input_label = tf.placeholder(tf.float32, [batch_size, None, None, 1])
     
     # Create the network
-    net, end_points = osvos(input_image)
+    net, end_points = osvos(input_image, instance_norm=instance_norm)
 
     # Initialize weights from pre-trained model
     if finetune == 0:
@@ -276,7 +279,7 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     # Define optimization method
     with tf.name_scope('optimization'):
         tf.summary.scalar('learning_rate', learning_rate)
-        optimizer = tf.train.MomentumOptimizer(learning_rate, momentum)
+        optimizer = tf.train.AdamOptimizer(learning_rate)
         grads_and_vars = optimizer.compute_gradients(total_loss)
         with tf.name_scope('grad_accumulator'):
             grad_accumulator = {}
@@ -399,7 +402,7 @@ def train_parent(dataset, initial_ckpt, supervison, learning_rate, logs_path, ma
 
 
 def train_finetune(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
-                   display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
+                   display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, instance_norm=False, resume_training=False,
                    config=None, test_image_path=None, ckpt_name="osvos"):
     """Finetune OSVOS
     Args:
@@ -408,11 +411,11 @@ def train_finetune(dataset, initial_ckpt, supervison, learning_rate, logs_path, 
     """
     finetune = 1
     _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
-           global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, test_image_path,
+           global_step, iter_mean_grad, batch_size, momentum, instance_norm, resume_training, config, finetune, test_image_path,
            ckpt_name)
 
 
-def test(dataset, checkpoint_file, result_path, config=None):
+def test(dataset, checkpoint_file, result_path, instance_norm=False, config=None):
     """Test one sequence
     Args:
     dataset: Reference to a Dataset object instance
@@ -433,7 +436,7 @@ def test(dataset, checkpoint_file, result_path, config=None):
     input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
 
     # Create the cnn
-    net, end_points = osvos(input_image)
+    net, end_points = osvos(input_image, instance_norm = False)
     probabilities = tf.nn.sigmoid(net)
     global_step = tf.Variable(0, name='global_step', trainable=False)
 
@@ -451,7 +454,7 @@ def test(dataset, checkpoint_file, result_path, config=None):
             curr_frame = curr_img[0].split('/')[-1].split('.')[0] + '.png'
             image = preprocess_img(img[0])
             res = sess.run(probabilities, feed_dict={input_image: image})
-            res_np = res.astype(np.float32)[0, :, :, 0] > 162.0/255.0
+            res_np = res.astype(np.float32)[0, :, :, 0] > 0.5
             scipy.misc.imsave(os.path.join(result_path, curr_frame), res_np.astype(np.float32))
             print 'Saving ' + os.path.join(result_path, curr_frame)
 

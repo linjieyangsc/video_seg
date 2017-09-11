@@ -52,9 +52,9 @@ for seq_name in seq_names:
         else:
             dataset = Dataset(None, test_imgs, './')
         # Train the network
-        if False:#train_model:
+        if train_model:
             # More training parameters
-            learning_rate = 1e-8
+            learning_rate = 1e-3
             save_step = max_training_iters
             side_supervision = 3
             display_step = 10
@@ -62,7 +62,7 @@ for seq_name in seq_names:
                 with tf.device('/gpu:' + str(gpu_id)):
                     global_step = tf.Variable(0, name='global_step', trainable=False)
                     osvos.train_finetune(dataset, parent_path, side_supervision, learning_rate, logs_path, max_training_iters,
-                                         save_step, display_step, global_step, iter_mean_grad=1, ckpt_name=seq_name)
+                                         save_step, display_step, global_step, iter_mean_grad=1, instance_norm=True, ckpt_name=seq_name)
 
         # Test the network
         with tf.Graph().as_default():
@@ -71,4 +71,4 @@ for seq_name in seq_names:
                     checkpoint_path = os.path.join('models_src', seq_name, label_id, seq_name+'.ckpt-'+str(max_training_iters))
                 else:
                     checkpoint_path = parent_path    
-                osvos.test(dataset, checkpoint_path, result_path)
+                osvos.test(dataset, checkpoint_path, result_path, instance_norm=True)
