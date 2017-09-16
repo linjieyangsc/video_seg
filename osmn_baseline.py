@@ -9,7 +9,7 @@ from datetime import datetime
 import os
 import scipy.misc
 from PIL import Image
-from ops import conditional_normalization
+from ops import instance_normalization
 slim = tf.contrib.slim
 
 
@@ -46,7 +46,7 @@ def crop_features(feature, out_size):
     return tf.reshape(slice_input, [int(feature.get_shape()[0]), out_size[1], out_size[2], int(feature.get_shape()[3])])
 
 
-def osmn(inputs, n_modulator_param = 1472, scope='osmn'):
+def osmn(inputs,  scope='osmn'):
     """Defines the OSMN
     Args:
     inputs: Tensorflow placeholder that contains the input image and the first frame masked forground
@@ -59,51 +59,22 @@ def osmn(inputs, n_modulator_param = 1472, scope='osmn'):
     im_size = tf.shape(inputs[1])
     with tf.variable_scope(scope, [inputs]) as sc:
         end_points_collection = sc.name + '_end_points'
-        with tf.variable_scope('modulator'):
+    #with tf.variable_scope(scope, [inputs], reuse=True) as sc:
+        with tf.variable_scope('seg'):
             # Collect outputs of all intermediate layers.
             with slim.arg_scope([slim.conv2d],
                                 padding='SAME',
                                 outputs_collections=end_points_collection):
               with slim.arg_scope([slim.max_pool2d], padding='SAME'):
-                net = slim.repeat(inputs[0], 2, slim.conv2d, 64, [3, 3], scope='conv1')
-                net = slim.max_pool2d(net, [2, 2], scope='pool1')
-                net_2 = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='conv2')
-                net = slim.max_pool2d(net_2, [2, 2], scope='pool2')
-                net_3 = slim.repeat(net, 3, slim.conv2d, 256, [3, 3], scope='conv3')
-                net = slim.max_pool2d(net_3, [2, 2], scope='pool3')
-                net_4 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
-                net = slim.max_pool2d(net_4, [2, 2], scope='pool4')
-                net_5 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
-                net_p = tf.reduce_mean(net_5, [1,2])
-            with slim.arg_scope([slim.fully_connected],
-                        activation_fn = tf.nn.sigmoid, biases_initializer=tf.constant_initializer(5)):
-                modulator_params = slim.fully_connected(net_p, n_modulator_param, scope='fc') 
-        #with tf.variable_scope(scope, [inputs], reuse=True) as sc:
-        with tf.variable_scope('seg'):
-            # Collect outputs of all intermediate layers.
-            with slim.arg_scope([slim.conv2d],
-                                padding='SAME', trainable=False,
-                                outputs_collections=end_points_collection):
-              with slim.arg_scope([slim.max_pool2d], padding='SAME'):
                 net = slim.repeat(inputs[1], 2, slim.conv2d, 64, [3, 3], scope='conv1')
-                m_params = tf.slice(modulator_params, [0,0], [1,64], name = 'm_param1')
-                net = conditional_normalization(net, m_params, scope='conv1')
                 net = slim.max_pool2d(net, [2, 2], scope='pool1')
                 net_2 = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='conv2')
-                m_params = tf.slice(modulator_params, [0,64], [1,128], name = 'm_param2')
-                net_2 = conditional_normalization(net_2, m_params, scope='conv2')
                 net = slim.max_pool2d(net_2, [2, 2], scope='pool2')
                 net_3 = slim.repeat(net, 3, slim.conv2d, 256, [3, 3], scope='conv3')
-                m_params = tf.slice(modulator_params, [0,192], [1,256], name = 'm_param3')
-                net_3 = conditional_normalization(net_3, m_params, scope='conv3')
                 net = slim.max_pool2d(net_3, [2, 2], scope='pool3')
                 net_4 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
-                m_params = tf.slice(modulator_params, [0,448], [1,512], name = 'm_param4')
-                net_4 = conditional_normalization(net_4, m_params, scope='conv4')
                 net = slim.max_pool2d(net_4, [2, 2], scope='pool4')
                 net_5 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
-                m_params = tf.slice(modulator_params, [0,960], [1,512], name = 'm_param5')
-                net_5 = conditional_normalization(net_5, m_params, scope='conv5')
                 # Get side outputs of the network
                 with slim.arg_scope([slim.conv2d],
                                     activation_fn=None):
@@ -126,6 +97,7 @@ def osmn(inputs, n_modulator_param = 1472, scope='osmn'):
                         side_5_f = slim.convolution2d_transpose(side_5, 16, 32, 16, scope='score-multi5-up')
                         side_5_f = crop_features(side_5_f, im_size)
                     concat_side = tf.concat([side_2_f, side_3_f, side_4_f, side_5_f], axis=3)
+                    #concat_side = instance_normalization(concat_side, use_biases = False, scope='concat')
                     with slim.arg_scope([slim.conv2d],
                                         trainable=True, normalizer_fn=None):
                         net = slim.conv2d(concat_side, 1, [1, 1], scope='upscore-fuse')
@@ -242,7 +214,7 @@ def load_vgg_fg_model(ckpt_path):
     var_to_shape_map = reader.get_variable_to_shape_map()
     vars_corresp = dict()
     for v in var_to_shape_map:
-        if "conv" in v:
+        if 'conv' in v or 'upscore' in v:
             vars_corresp[v] = slim.get_model_variables(v.replace("osvos", "osmn/seg"))[0]
     init_fn = slim.assign_from_checkpoint_fn(
             ckpt_path,
@@ -260,7 +232,7 @@ def load_vgg_imagenet(ckpt_path):
     var_to_shape_map = reader.get_variable_to_shape_map()
     vars_corresp = dict()
     for v in var_to_shape_map:
-        if "conv" in v or 'upscore' in v:
+        if "conv" in v:
             vars_corresp[v] = slim.get_model_variables(v.replace("vgg_16", "osvos"))[0]
     init_fn = slim.assign_from_checkpoint_fn(
         ckpt_path,
@@ -444,7 +416,7 @@ def _train(dataset, initial_ckpt, learning_rate, logs_path, max_training_iters, 
             else:
                 print('Initializing from foreground model...')
                 init_weights(sess)
-                sess.run(modulator_surgery(slim.get_model_variables()))
+                #sess.run(modulator_surgery(slim.get_model_variables()))
             step = 1
         sess.run(interp_surgery(tf.global_variables()))
         print('Weights initialized')

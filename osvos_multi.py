@@ -427,9 +427,8 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
 
     # Define loss
     with tf.name_scope('losses'):
-
-        main_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=net, labels=input_label)
-        main_loss = tf.reduce_sum(main_loss)
+        # normalized cross entropy loss 
+        main_loss = tf.losses.sparse_softmax_cross_entropy(input_label, net)
         tf.summary.scalar('main_loss', main_loss)
 
         output_loss = main_loss

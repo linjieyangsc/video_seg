@@ -45,14 +45,14 @@ for name in train_seq_names:
                 for frame in train_frames]
 gpu_id = sys.argv[1]
 train_model = True if len(sys.argv) > 2 else False
-result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSMN')
+result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSMN2')
 # Train parameters
 parent_path = os.path.join('models_src', 'OSVOS_parent', 'OSVOS_parent.ckpt-50000')
-logs_path = 'models_osmn/seg_fix'
+logs_path = 'models_osmn/no_aug'
 max_training_iters = int(sys.argv[2])
 
 # Define Dataset
-dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide, data_aug=True, data_aug_scales=[0.5, 0.8, 1])
+dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide, data_aug=True, data_aug_scales=[1])
 # More training parameters
 learning_rate = 1e-3
 save_step = max_training_iters / 10

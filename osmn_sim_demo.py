@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 # Import OSVOS files
 root_folder = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.abspath(root_folder))
-import osmn
+import osmn_sim
 from dataset_osmn import Dataset
 os.chdir(root_folder)
 baseDir = '/raid/ljyang/data'
@@ -45,23 +45,22 @@ for name in train_seq_names:
                 for frame in train_frames]
 gpu_id = sys.argv[1]
 train_model = True if len(sys.argv) > 2 else False
-result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSMN')
+result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSMN_sim')
 # Train parameters
 parent_path = os.path.join('models_src', 'OSVOS_parent', 'OSVOS_parent.ckpt-50000')
-logs_path = 'models_osmn/seg_fix'
+logs_path = 'models_osmn/sim2_fix'
 max_training_iters = int(sys.argv[2])
-
 # Define Dataset
 dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide, data_aug=True, data_aug_scales=[0.5, 0.8, 1])
 # More training parameters
-learning_rate = 1e-3
+learning_rate = 1e-3    
 save_step = max_training_iters / 10
 display_step = 10
 with tf.Graph().as_default():
     with tf.device('/gpu:' + str(gpu_id)):
         global_step = tf.Variable(0, name='global_step', trainable=False)
-        osmn.train_finetune(dataset, parent_path, learning_rate, logs_path, max_training_iters,
-                             save_step, display_step, global_step, iter_mean_grad=1, ckpt_name='osmn')
+        osmn_sim.train_finetune(dataset, parent_path, learning_rate, logs_path, max_training_iters,
+                save_step, display_step, global_step, iter_mean_grad=1, ckpt_name='osmn')
 
 # Test the network
 with tf.Graph().as_default():
@@ -70,4 +69,4 @@ with tf.Graph().as_default():
             checkpoint_path = os.path.join(logs_path, 'osmn.ckpt-'+str(max_training_iters))
         else:
             checkpoint_path = parent_path    
-        osmn.test(dataset, checkpoint_path, result_path)
+        osmn_sim.test(dataset, checkpoint_path, result_path)

@@ -68,7 +68,7 @@ def osvos(inputs, scope='osvos', instance_norm=False):
         # Collect outputs of all intermediate layers.
         with slim.arg_scope([slim.conv2d],
                             padding='SAME', trainable=not instance_norm,
-                            normalizer_fn=normalizer_fn, normalizer_params=None,
+                            normalizer_fn=normalizer_fn, normalizer_params={'use_biases':False},
                             outputs_collections=end_points_collection):
           with slim.arg_scope([slim.max_pool2d], padding='SAME'):
             net = slim.repeat(inputs, 2, slim.conv2d, 64, [3, 3], scope='conv1')
@@ -84,7 +84,7 @@ def osvos(inputs, scope='osvos', instance_norm=False):
             # Get side outputs of the network
             with slim.arg_scope([slim.conv2d],
                                 activation_fn=None, trainable=not instance_norm,
-                                normalizer_fn=normalizer_fn, normalizer_params=None):
+                                normalizer_fn=None, normalizer_params=None):
                 side_2 = slim.conv2d(net_2, 16, [3, 3], scope='conv2_2_16')
                 side_3 = slim.conv2d(net_3, 16, [3, 3], scope='conv3_3_16')
                 side_4 = slim.conv2d(net_4, 16, [3, 3], scope='conv4_3_16')

@@ -3,7 +3,7 @@ import os
 slim = tf.contrib.slim
 
 def instance_normalization(inputs,reuse=None, variables_collections=None,output_collections=None,
-        trainable=True, scope=None):
+        use_biases=True, trainable=True, scope=None):
     with tf.variable_scope(scope, 'InstanceNorm', [inputs],
                          reuse=reuse) as sc:
         inputs_shape = inputs.get_shape()
@@ -27,24 +27,15 @@ def instance_normalization(inputs,reuse=None, variables_collections=None,output_
         shape = tf.TensorShape([1, 1, 1]).concatenate(params_shape)
         beta = slim.model_variable('beta', shape=shape, dtype=dtype,
                 initializer=tf.zeros_initializer(), collections=None,
-                trainable=trainable)
+                trainable=use_biases)
         gamma = slim.model_variable('gamma', shape=shape, dtype=dtype,
                 initializer=tf.ones_initializer(), collections=None,
                 trainable=trainable)
-        # Calculate the moments on the last axis (instance activations).
-        
-        # mean, variance = tf.nn.moments(inputs, axis, keep_dims=True)
-        mean = slim.model_variable('mean', shape=shape, dtype=dtype,
-                initializer=tf.zeros_initializer(), collections=None,
-                trainable=False)
-        variance = slim.model_variable('variance', shape=shape, dtype=dtype,
-                initializer=tf.ones_initializer(), collections=None,
-                trainable=False)
-        # Compute layer normalization using the batch_normalization function.
-        variance_epsilon = 1E-5
-        outputs = tf.nn.batch_normalization(
-            inputs, mean, variance, beta, gamma, variance_epsilon)
-        outputs.set_shape(inputs_shape)
+        if use_biases:
+            print 'use biases'
+        else:
+            print 'not use biases'
+        outputs = inputs * gamma + beta
         return slim.utils.collect_named_outputs(output_collections,
                                                 sc.original_name_scope,
                                                 outputs)

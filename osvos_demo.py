@@ -22,7 +22,7 @@ from dataset import Dataset
 os.chdir(root_folder)
 baseDir = '/raid/ljyang/data'
 # User defined parameters
-val_path = os.path.join(baseDir, 'DAVIS/ImageSets/2017/val.txt')
+val_path = os.path.join(baseDir, 'DAVIS/ImageSets/2017/train.txt')
 with open(val_path, 'r') as f:
     seq_names = [line.strip() for line in f]
 for seq_name in seq_names:
@@ -71,4 +71,4 @@ for seq_name in seq_names:
                     checkpoint_path = os.path.join('models_src', seq_name, label_id, seq_name+'.ckpt-'+str(max_training_iters))
                 else:
                     checkpoint_path = parent_path    
-                osvos.test(dataset, checkpoint_path, result_path, instance_norm=True)
+                osvos.test(dataset, checkpoint_path, result_path, instance_norm=False)

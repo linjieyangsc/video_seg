@@ -31,6 +31,7 @@ class Dataset:
         self.train_size = len(train_list)
         self.test_size = len(test_list)
         self.train_idx = np.arange(self.train_size)
+        self.test_idx = np.arange(self.test_size)
         np.random.shuffle(self.train_idx)
 
     def next_batch(self, batch_size, phase):
@@ -90,12 +91,12 @@ class Dataset:
             for i in idx:
                 sample = self.test_list[i]
                 guide_image = Image.open(sample[0])
-                guide_label = Image.open(sample[1]).split()[0]
+                guide_label = Image.open(sample[1])
                 image = Image.open(sample[2])
                 guide_images.append(np.array(guide_image))
                 guide_labels.append(np.array(guide_label.split()[0]))
                 images.append(np.array(image))
-                image_paths.append(sample[2])
+                image_paths.append(os.path.join(*(sample[1].split('/')[:-1] + [sample[2].split('/')[-1]])))
 
             return guide_images, guide_labels, images, image_paths
         else:
