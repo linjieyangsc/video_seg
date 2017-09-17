@@ -46,7 +46,7 @@ def crop_features(feature, out_size):
     return tf.reshape(slice_input, [int(feature.get_shape()[0]), out_size[1], out_size[2], int(feature.get_shape()[3])])
 
 
-def osmn(inputs, n_modulator_param = 1024, scope='osmn'):
+def osmn(inputs, n_modulator_param = 1024, scope='osmn', is_training=False):
     """Defines the OSMN
     Args:
     inputs: Tensorflow placeholder that contains the input image and the first frame masked forground
@@ -57,6 +57,7 @@ def osmn(inputs, n_modulator_param = 1024, scope='osmn'):
     """
     guide_im_size = tf.shape(inputs[0])
     im_size = tf.shape(inputs[1])
+    batch_size = inputs[1].get_shape().as_list()[0]
     with tf.variable_scope(scope, [inputs]) as sc:
         end_points_collection = sc.name + '_end_points'
         with tf.variable_scope('modulator'):
@@ -75,13 +76,18 @@ def osmn(inputs, n_modulator_param = 1024, scope='osmn'):
                 net = slim.max_pool2d(net_4, [2, 2], scope='pool4')
                 net_5 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
                 net = slim.max_pool2d(net_5, [2, 2], scope='pool5')
-                net = slim.fully_connected(net, 4096, scope='fc6')
-                net = slim.dropout(net, 0.5, scope='dropout6')
-                net = slim.fully_connected(net, 4096, scope='fc7')
-                net = slim.dropout(net, 0.5, scope='dropout7')
-            with slim.arg_scope([slim.fully_connected],
-                        activation_fn = tf.nn.sigmoid, biases_initializer=tf.constant_initializer(5)):
-                modulator_params = slim.fully_connected(net_p, n_modulator_param, scope='fc_pred') 
+                net = slim.conv2d(net, 4096, [7, 7], padding='VALID', scope='fc6')
+                net = slim.dropout(net, 0.5, is_training=is_training, scope='dropout6')
+                net = slim.conv2d(net, 4096, [1, 1], scope='fc7')
+                net = slim.dropout(net, 0.5, is_training=is_training, scope='dropout7')
+                #with slim.arg_scope([slim.fully_connected],
+                #        activation_fn = tf.nn.sigmoid, biases_initializer=tf.constant_initializer(5)):
+                modulator_params = slim.conv2d(net, n_modulator_param, [1, 1],
+                        weights_initializer=tf.zeros_initializer(),  
+                        biases_initializer=tf.ones_initializer(),
+                        activation_fn=None,normalizer_fn=None,scope='fc8')
+               # modulator_params = slim.fully_connected(net, n_modulator_param, scope='fc_pred')
+                modulator_params = tf.squeeze(modulator_params, [1,2])
         #with tf.variable_scope(scope, [inputs], reuse=True) as sc:
         with tf.variable_scope('seg'):
             # Collect outputs of all intermediate layers.
@@ -102,11 +108,11 @@ def osmn(inputs, n_modulator_param = 1024, scope='osmn'):
                 #net_3 = conditional_normalization(net_3, m_params, scope='conv3')
                 net = slim.max_pool2d(net_3, [2, 2], scope='pool3')
                 net_4 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
-                m_params = tf.slice(modulator_params, [0,0], [1,512], name = 'm_param4')
+                m_params = tf.slice(modulator_params, [0,0], [batch_size,512], name = 'm_param4')
                 net_4 = conditional_normalization(net_4, m_params, scope='conv4')
                 net = slim.max_pool2d(net_4, [2, 2], scope='pool4')
                 net_5 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
-                m_params = tf.slice(modulator_params, [0,512], [1,512], name = 'm_param5')
+                m_params = tf.slice(modulator_params, [0,512], [batch_size,512], name = 'm_param5')
                 net_5 = conditional_normalization(net_5, m_params, scope='conv5')
                 # Get side outputs of the network
                 with slim.arg_scope([slim.conv2d],
@@ -233,7 +239,7 @@ def class_balanced_cross_entropy_loss(output, label):
 
 
 
-def _train(dataset, initial_ckpt, learning_rate, logs_path, max_training_iters, save_step, display_step,
+def _train(dataset, initial_ckpt, fg_ckpt, learning_rate, logs_path, max_training_iters, save_step, display_step,
            global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False, config=None, finetune=1,
            test_image_path=None, ckpt_name="osmn"):
     """Train OSVOS
@@ -266,13 +272,13 @@ def _train(dataset, initial_ckpt, learning_rate, logs_path, max_training_iters, 
     tf.logging.set_verbosity(tf.logging.INFO)
 
     # Prepare the input data
-    guide_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
+    guide_image = tf.placeholder(tf.float32, [batch_size, 224, 224, 3])
     input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
     input_label = tf.placeholder(tf.float32, [batch_size, None, None, 1])
 
     # Create the network
     with slim.arg_scope(osmn_arg_scope()):
-        net, end_points = osmn([guide_image, input_image])
+        net, end_points = osmn([guide_image, input_image], is_training=True)
 
 
     # Define loss
@@ -343,9 +349,9 @@ def _train(dataset, initial_ckpt, learning_rate, logs_path, max_training_iters, 
             step = global_step.eval() + 1
         else:
             print('Initializing from pre-trained imagenet model...')
-            load_vgg_imagenet(sess)
+            load_vgg_imagenet(initial_ckpt)(sess)
             print('Initializing from foreground model...')
-            load_vgg_fg_model(sess)
+            load_vgg_fg_model(fg_ckpt)(sess)
             step = 1
         sess.run(interp_surgery(tf.global_variables()))
         print('Weights initialized')
@@ -386,7 +392,7 @@ def _train(dataset, initial_ckpt, learning_rate, logs_path, max_training_iters, 
 
 
 
-def train_finetune(dataset, initial_ckpt, learning_rate, logs_path, max_training_iters, save_step,
+def train_finetune(dataset, initial_ckpt, fg_ckpt, learning_rate, logs_path, max_training_iters, save_step,
                    display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
                    config=None, instance_norm=False, test_image_path=None, ckpt_name="osmn"):
     """Finetune OSVOS
@@ -395,12 +401,12 @@ def train_finetune(dataset, initial_ckpt, learning_rate, logs_path, max_training
     Returns:
     """
     finetune = 1
-    _train(dataset, initial_ckpt, learning_rate, logs_path, max_training_iters, save_step, display_step,
+    _train(dataset, initial_ckpt, fg_ckpt, learning_rate, logs_path, max_training_iters, save_step, display_step,
            global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, test_image_path,
            ckpt_name)
 
 
-def test(dataset, checkpoint_file, result_path, config=None):
+def test(dataset, checkpoint_file, result_path, batch_size=1, config=None):
     """Test one sequence
     Args:
     dataset: Reference to a Dataset object instance
@@ -417,13 +423,13 @@ def test(dataset, checkpoint_file, result_path, config=None):
     tf.logging.set_verbosity(tf.logging.INFO)
 
     # Input data
-    batch_size = 1
+
     guide_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
     input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
 
     # Create the cnn
     with slim.arg_scope(osmn_arg_scope()):
-        net, end_points = osmn([guide_image, input_image])
+        net, end_points = osmn([guide_image, input_image], is_training=False)
     probabilities = tf.nn.sigmoid(net)
     global_step = tf.Variable(0, name='global_step', trainable=False)
 
@@ -436,22 +442,18 @@ def test(dataset, checkpoint_file, result_path, config=None):
         saver.restore(sess, checkpoint_file)
         if not os.path.exists(result_path):
             os.makedirs(result_path)
-        for frame in range(0, dataset.get_test_size()):
-            guide_img, img, curr_img = dataset.next_batch(batch_size, 'test')
-            curr_frame = curr_img[0].split('/')[-1].split('.')[0] + '.png'
-            path_fds = curr_img[0].split('/')
-            save_path = os.path.join(result_path, path_fds[-3], path_fds[-2])
-            if not os.path.exists(save_path):
-                os.makedirs(save_path)
-            image = preprocess_img(img[0])
-            masked_g_image = preprocess_guide(guide_img[0], guide_label[0])
-            res = sess.run(probabilities, feed_dict={guide_image: masked_g_image, input_image: image})
-            res_np = res.astype(np.float32)[0, :, :, 0] > 0.5
-            scipy.misc.imsave(os.path.join(save_path, curr_frame), res_np.astype(np.float32))
-            print 'Saving ' + os.path.join(save_path, curr_frame)
-            curr_score_name = curr_frame[:-4]
-            np.save(os.path.join(save_path, curr_score_name), res.astype(np.float32)[0,:,:,0])
-            print 'Saving ' + os.path.join(save_path, curr_score_name) + '.npy'
-            #masked_g_image += np.array((104, 117, 127))
-            #masked_g_image /= 255
-            #scipy.misc.imsave(os.path.join(save_path, curr_score_name + '_guide.png'),masked_g_image[0,:,:,:])
+        for frame in range(0, dataset.get_test_size(), batch_size):
+            guide_images, images, image_paths = dataset.next_batch(batch_size, 'test')
+            save_names = [im_path.split('/')[-1].split('.')[0] + '.png' for im_path in image_paths]
+            res = sess.run(probabilities, feed_dict={guide_image: guide_images, input_image: images})
+            res_np = res.astype(np.float32)[:, :, :, 0] > 0.5
+            guide_images += np.array((104, 117, 127))
+            guide_images /= 255
+            for i in range(min(batch_size, dataset.get_test_size() - frame)):
+                print 'Saving ' + os.path.join(result_path, save_names[i])
+                scipy.misc.imsave(os.path.join(result_path, save_names[i]), res_np[i].astype(np.float32))
+                curr_score_name = save_names[i][:-4]
+                print 'Saving ' + os.path.join(result_path, curr_score_name) + '.npy'
+                np.save(os.path.join(result_path, curr_score_name), res.astype(np.float32)[i,:,:,0])
+
+                scipy.misc.imsave(os.path.join(result_path, curr_score_name + '_guide.png'),guide_images[i])

@@ -53,6 +53,7 @@ def conditional_normalization(inputs, gamma, reuse=None, variable_collections=No
         dtype = inputs.dtype.base_dtype
         axis = [1, 2]
         params_shape = inputs_shape[-1:]
+        gamma = tf.expand_dims(tf.expand_dims(gamma, 1), 1)
         if not params_shape.is_fully_defined():
           raise ValueError('Inputs %s has undefined last dimension %s.' % (
               inputs.name, params_shape))

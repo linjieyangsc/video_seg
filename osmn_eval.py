@@ -33,11 +33,11 @@ for name in val_seq_names:
 gpu_id = sys.argv[1]
 result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSMN')
 checkpoint_path = sys.argv[2]
-
+batch_size = 10
 # Define Dataset
 dataset = Dataset([], test_imgs_with_guide)
 
 # Test the network
 with tf.Graph().as_default():
     with tf.device('/gpu:' + str(gpu_id)):
-        osmn.test(dataset, checkpoint_path, result_path)
+        osmn.test(dataset, checkpoint_path, result_path, batch_size =10)
