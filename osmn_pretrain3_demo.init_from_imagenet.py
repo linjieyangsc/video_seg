@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 # Import OSVOS files
 root_folder = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.abspath(root_folder))
-import osmn_pretrain as osmn
+import osmn_pretrain3_init as osmn
 from dataset_coco import Dataset
 os.chdir(root_folder)
 baseDir = '/raid/ljyang/data'
@@ -22,11 +22,11 @@ val_path = os.path.join(baseDir, 'MS_COCO/val2017/{:012d}.jpg')
 train_file = os.path.join(baseDir, 'MS_COCO/annotations/instances_train2017.json')
 val_file = os.path.join(baseDir, 'MS_COCO/annotations/instances_val2017.json')
 gpu_id = sys.argv[1]
-result_path = os.path.join('COCO', 'OSMN')
+result_path = os.path.join('COCO', 'OSMN3')
 # Train parameters
 init_vgg_path = os.path.join('models', 'vgg_16.ckpt')
-parent_path = os.path.join('models_src', 'OSVOS_parent', 'OSVOS_parent.ckpt-50000')
-logs_path = 'models_coco/osmn_init'
+parent_path = init_vgg_path #os.path.join('models_src', 'OSVOS_parent', 'OSVOS_parent.ckpt-50000')
+logs_path = 'models_coco/osmn3_init'
 max_training_iters = int(sys.argv[2])
 
 # Define Dataset
