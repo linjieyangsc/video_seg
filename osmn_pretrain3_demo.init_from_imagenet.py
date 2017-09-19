@@ -35,7 +35,7 @@ dataset = Dataset(train_file, val_file, train_path, val_path, data_aug=True, dat
 learning_rate = 1e-3
 save_step = max_training_iters / 20
 display_step = 10
-batch_size = 10
+batch_size = 8
 with tf.Graph().as_default():
     with tf.device('/gpu:' + str(gpu_id)):
         global_step = tf.Variable(0, name='global_step', trainable=False)

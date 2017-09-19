@@ -92,7 +92,7 @@ def osmn(inputs, n_modulator_param = 3136, scope='osmn', is_training=False):
         with tf.variable_scope('seg'):
             # Collect outputs of all intermediate layers.
             with slim.arg_scope([slim.conv2d],
-                                padding='SAME', trainable=False,
+                                padding='SAME',
                                 outputs_collections=end_points_collection):
               with slim.arg_scope([slim.max_pool2d], padding='SAME'):
                 net = slim.repeat(inputs[1], 2, slim.conv2d, 64, [3, 3], scope='conv1')

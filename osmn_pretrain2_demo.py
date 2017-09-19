@@ -32,7 +32,7 @@ max_training_iters = int(sys.argv[2])
 # Define Dataset
 dataset = Dataset(train_file, val_file, train_path, val_path, data_aug=True, data_aug_scales=[0.8, 1, 1.2])
 # More training parameters
-learning_rate = 1e-3
+learning_rate = 1e-5
 save_step = max_training_iters / 20
 display_step = 10
 batch_size = 10
@@ -41,7 +41,7 @@ with tf.Graph().as_default():
         global_step = tf.Variable(0, name='global_step', trainable=False)
         osmn.train_finetune(dataset, init_vgg_path, parent_path, learning_rate, logs_path, max_training_iters,
                              save_step, display_step, global_step, batch_size = batch_size, 
-                             iter_mean_grad=1, ckpt_name='osmn')
+                             iter_mean_grad=1, resume_training=True, ckpt_name='osmn')
 
 # Test the network
 with tf.Graph().as_default():

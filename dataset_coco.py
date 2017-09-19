@@ -7,6 +7,7 @@ import numpy as np
 import sys
 import random
 import cPickle
+from util import get_mask_bbox
 sys.path.append('../coco/PythonAPI')
 from pycocotools.coco import COCO
 class Dataset:
@@ -32,13 +33,13 @@ class Dataset:
         self.test_data = COCO(test_anno_file)
         if os.path.exists('cache/train_annos.pkl'):
             self.train_annos = cPickle.load(open('cache/train_annos.pkl', 'rb'))
-            self.test_annos = cPickle.load(open('cache/test_annos.pkl', 'rb'))
+            self.test_annos = cPickle.load(open('cache/val_annos.pkl', 'rb'))
         else:
             # prefiltering of segmentation instances
             self.train_annos = self.prefilter(self.train_data)
             self.test_annos = self.prefilter(self.test_data)
             cPickle.dump(self.train_annos, open('cache/train_annos.pkl', 'wb'), cPickle.HIGHEST_PROTOCOL)
-            cPickle.dump(self.test_annos, open('cache/test_annos.pkl', 'wb'), cPickle.HIGHEST_PROTOCOL)
+            cPickle.dump(self.test_annos, open('cache/val_annos.pkl', 'wb'), cPickle.HIGHEST_PROTOCOL)
         # Init parameters
 
         self.train_ptr = 0
@@ -65,17 +66,6 @@ class Dataset:
                 res_annos.append(anno)
         return res_annos
     
-    def get_mask_bbox(self, m, border_pixels=8):
-        rows = np.any(m, axis=1)
-        cols = np.any(m, axis=0)
-        ymin, ymax = np.where(rows)[0][[0, -1]]
-        xmin, xmax = np.where(cols)[0][[0, -1]]
-        h,w = m.shape
-        ymin = max(0, ymin - border_pixels)
-        ymax = min(h-1, ymax + border_pixels)
-        xmin = max(0, xmin - border_pixels)
-        xmax = min(w-1, xmax + border_pixels)
-        return (xmin, ymin, xmax, ymax)
 
     def next_batch(self, batch_size, phase):
         """Get next batch of image (path) and labels

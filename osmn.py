@@ -74,36 +74,44 @@ def osmn(inputs, n_modulator_param = 1472, scope='osmn'):
                 net_4 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
                 net = slim.max_pool2d(net_4, [2, 2], scope='pool4')
                 net_5 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
-                net_p = tf.reduce_mean(net_5, [1,2])
-            with slim.arg_scope([slim.fully_connected],
-                        activation_fn = tf.nn.sigmoid, biases_initializer=tf.constant_initializer(5)):
-                modulator_params = slim.fully_connected(net_p, n_modulator_param, scope='fc') 
+                net = slim.max_pool2d(net_5, [2, 2], scope='pool5')
+                net = slim.conv2d(net, 4096, [7, 7], padding='VALID', scope='fc6')
+                net = slim.dropout(net, 0.5, is_training=is_training, scope='dropout6')
+                net = slim.conv2d(net, 4096, [1, 1], scope='fc7')
+                net = slim.dropout(net, 0.5, is_training=is_training, scope='dropout7')
+                #with slim.arg_scope([slim.fully_connected],
+                #        activation_fn = tf.nn.sigmoid, biases_initializer=tf.constant_initializer(5)):
+                modulator_params = slim.conv2d(net, n_modulator_param, [1, 1],
+                        weights_initializer=tf.zeros_initializer(),  
+                        biases_initializer=tf.ones_initializer(),
+                        activation_fn=None,normalizer_fn=None,scope='fc8')
+               # modulator_params = slim.fully_connected(net, n_modulator_param, scope='fc_pred')
+                modulator_params = tf.squeeze(modulator_params, [1,2])
         #with tf.variable_scope(scope, [inputs], reuse=True) as sc:
         with tf.variable_scope('seg'):
             # Collect outputs of all intermediate layers.
             with slim.arg_scope([slim.conv2d],
-                                padding='SAME', trainable=False,
+                                padding='SAME',
                                 outputs_collections=end_points_collection):
               with slim.arg_scope([slim.max_pool2d], padding='SAME'):
                 net = slim.repeat(inputs[1], 2, slim.conv2d, 64, [3, 3], scope='conv1')
-                m_params = tf.slice(modulator_params, [0,0], [1,64], name = 'm_param1')
-                net = conditional_normalization(net, m_params, scope='conv1')
                 net = slim.max_pool2d(net, [2, 2], scope='pool1')
                 net_2 = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='conv2')
-                m_params = tf.slice(modulator_params, [0,64], [1,128], name = 'm_param2')
-                net_2 = conditional_normalization(net_2, m_params, scope='conv2')
                 net = slim.max_pool2d(net_2, [2, 2], scope='pool2')
                 net_3 = slim.repeat(net, 3, slim.conv2d, 256, [3, 3], scope='conv3')
-                m_params = tf.slice(modulator_params, [0,192], [1,256], name = 'm_param3')
-                net_3 = conditional_normalization(net_3, m_params, scope='conv3')
-                net = slim.max_pool2d(net_3, [2, 2], scope='pool3')
-                net_4 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
-                m_params = tf.slice(modulator_params, [0,448], [1,512], name = 'm_param4')
-                net_4 = conditional_normalization(net_4, m_params, scope='conv4')
-                net = slim.max_pool2d(net_4, [2, 2], scope='pool4')
-                net_5 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
-                m_params = tf.slice(modulator_params, [0,960], [1,512], name = 'm_param5')
-                net_5 = conditional_normalization(net_5, m_params, scope='conv5')
+                net_4 = slim.max_pool2d(net_3, [2, 2], scope='pool3')
+                prev_mod_id = 0
+                for i in range(3):
+                    net_4 = slim.conv2d(net_4, 512, [3,3], scope='conv4/conv4_{}'.format(i+1))
+                    m_params = tf.slice(modulator_params, [0,prev_mod_id], [batch_size,512], name = 'm_param4')
+                    net_4 = conditional_normalization(net_4, m_params, scope='conv4/conv4_{}'.format(i+1))
+                    prev_mod_id += 512
+                net_5 = slim.max_pool2d(net_4, [2, 2], scope='pool4')
+                for i in range(3):
+                    net_5 = slim.conv2d(net_5, 512, [3, 3], scope='conv5/conv5_{}'.format(i+1))
+                    m_params = tf.slice(modulator_params, [0,prev_mod_id], [batch_size,512], name = 'm_param5')
+                    net_5 = conditional_normalization(net_5, m_params, scope='conv5/conv5_{}'.format(i+1))
+                    prev_mod_id += 512
                 # Get side outputs of the network
                 with slim.arg_scope([slim.conv2d],
                                     activation_fn=None):
@@ -143,14 +151,6 @@ def upsample_filt(size):
     return (1 - abs(og[0] - center) / factor) * \
            (1 - abs(og[1] - center) / factor)
 
-# copy weights from seg branch to modulator
-def modulator_surgery(variables):
-    mod_tensors = []
-    for v in variables:
-        if 'modulator' in v.name and 'conv' in v.name:
-            print v.name
-            mod_tensors.append(tf.assign(v, slim.get_model_variables(v.name.replace('modulator','seg'))[0]))
-    return mod_tensors
 
 # Set deconvolutional layers to compute bilinear interpolation
 def interp_surgery(variables):
@@ -170,65 +170,6 @@ def interp_surgery(variables):
             interp_tensors.append(tf.assign(v, tmp.transpose((2, 3, 1, 0)), validate_shape=True, use_locking=True))
     return interp_tensors
 
-# TO DO: Move preprocessing into Tensorflow
-def preprocess_img(image):
-    """Preprocess the image to adapt it to network requirements
-    Args:
-    Image we want to input the network (W,H,3) numpy array
-    Returns:
-    Image ready to input the network (1,W,H,3)
-    """
-    if type(image) is not np.ndarray:
-        image = np.array(Image.open(image), dtype=np.uint8)
-    in_ = image[:, :, ::-1]
-    in_ = np.subtract(in_, np.array((104.00699, 116.66877, 122.67892), dtype=np.float32))
-    # in_ = tf.subtract(tf.cast(in_, tf.float32), np.array((104.00699, 116.66877, 122.67892), dtype=np.float32))
-    in_ = np.expand_dims(in_, axis=0)
-    # in_ = tf.expand_dims(in_, 0)
-    return in_
-
-
-# TO DO: Move preprocessing into Tensorflow
-def preprocess_labels(label):
-    """Preprocess the labels to adapt them to the loss computation requirements
-    Args:
-    Label corresponding to the input image (W,H) numpy array
-    Returns:
-    Label ready to compute the loss (1,W,H,1)
-    """
-    if type(label) is not np.ndarray:
-        label = np.array(Image.open(label).split()[0], dtype=np.uint8)
-    max_mask = np.max(label) * 0.5
-    label = np.greater(label, max_mask)
-    label = np.expand_dims(np.expand_dims(label, axis=0), axis=3)
-    # label = tf.cast(np.array(label), tf.float32)
-    # max_mask = tf.multiply(tf.reduce_max(label), 0.5)
-    # label = tf.cast(tf.greater(label, max_mask), tf.float32)
-    # label = tf.expand_dims(tf.expand_dims(label, 0), 3)
-    return label
-
-def masked_image(image, label):
-    masked = np.zeros((image.shape))
-    label = label[:,:,:,0]
-    for ch in range(image.shape[3]):
-        masked[label > 0, ch] = image[label > 0, ch]
-    return masked
-
-def preprocess_guide(image, label, border_pixels=8):
-    rows = np.any(label, axis=1)
-    cols = np.any(label, axis=0)
-    ymin, ymax = np.where(rows)[0][[0, -1]]
-    xmin, xmax = np.where(cols)[0][[0, -1]]
-    h, w = label.shape
-    ymin = max(0, ymin - border_pixels)
-    ymax = min(h-1, ymax + border_pixels)
-    xmin = max(0, xmin - border_pixels)
-    xmax = min(w-1, xmax + border_pixels)
-    image = image[ymin:ymax+1, xmin:xmax+1]
-    label = label[ymin:ymax+1, xmin:xmax+1]
-    image = preprocess_img(image)
-    label = preprocess_labels(label)
-    return masked_image(image, label)
 
 
 def load_vgg_fg_model(ckpt_path):
@@ -242,7 +183,7 @@ def load_vgg_fg_model(ckpt_path):
     var_to_shape_map = reader.get_variable_to_shape_map()
     vars_corresp = dict()
     for v in var_to_shape_map:
-        if "conv" in v:
+        if "conv" in v or 'upscore' in v:
             vars_corresp[v] = slim.get_model_variables(v.replace("osvos", "osmn/seg"))[0]
     init_fn = slim.assign_from_checkpoint_fn(
             ckpt_path,
@@ -260,8 +201,8 @@ def load_vgg_imagenet(ckpt_path):
     var_to_shape_map = reader.get_variable_to_shape_map()
     vars_corresp = dict()
     for v in var_to_shape_map:
-        if "conv" in v or 'upscore' in v:
-            vars_corresp[v] = slim.get_model_variables(v.replace("vgg_16", "osvos"))[0]
+        if "conv" in v or "fc6" in v or "fc7" in v:
+            vars_corresp[v] = slim.get_model_variables(v.replace("vgg_16", "osmn/modulator"))[0]
     init_fn = slim.assign_from_checkpoint_fn(
         ckpt_path,
         vars_corresp)
@@ -293,33 +234,6 @@ def class_balanced_cross_entropy_loss(output, label):
     final_loss = num_labels_neg / num_total * loss_pos + num_labels_pos / num_total * loss_neg
 
     return final_loss
-
-
-def class_balanced_cross_entropy_loss_theoretical(output, label):
-    """Theoretical version of the class balanced cross entropy loss to train the network (Produces unstable results)
-    Args:
-    output: Output of the network
-    label: Ground truth label
-    Returns:
-    Tensor that evaluates the loss
-    """
-    output = tf.nn.sigmoid(output)
-
-    labels_pos = tf.cast(tf.greater(label, 0), tf.float32)
-    labels_neg = tf.cast(tf.less(label, 1), tf.float32)
-
-    num_labels_pos = tf.reduce_sum(labels_pos)
-    num_labels_neg = tf.reduce_sum(labels_neg)
-    num_total = num_labels_pos + num_labels_neg
-
-    loss_pos = tf.reduce_sum(tf.multiply(labels_pos, tf.log(output + 0.00001)))
-    loss_neg = tf.reduce_sum(tf.multiply(labels_neg, tf.log(1 - output + 0.00001)))
-
-    final_loss = -num_labels_neg / num_total * loss_pos - num_labels_pos / num_total * loss_neg
-
-    return final_loss
-
-
 
 
 
