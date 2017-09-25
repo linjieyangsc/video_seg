@@ -56,7 +56,7 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
     end_points: Dictionary with all Tensors of the network
     """
     guide_im_size = tf.shape(inputs[0])
-    im_size = tf.shape(inputs[1])
+    im_size = tf.shape(inputs[2])
     batch_size = inputs[1].get_shape().as_list()[0]
     mod_last_conv = model_params.get('mod_last_conv', False)
     n_modulator_param = 512 * 6 + mod_last_conv * 64
@@ -92,30 +92,48 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                # modulator_params = slim.fully_connected(net, n_modulator_param, scope='fc_pred')
                 modulator_params = tf.squeeze(modulator_params, [1,2])
         #with tf.variable_scope(scope, [inputs], reuse=True) as sc:
+        with tf.variable_scope('modulator_sp'):
+            with slim.arg_scope([slim.conv2d, slim.max_pool2d],
+                                padding='SAME', outputs_collections=end_points_collection):
+                if mod_last_conv:
+                    full_att = slim.conv2d(inputs[1], 64, [1,1], scope='full')
+
+                ds_mask = slim.max_pool2d(inputs[1], [8, 8], stride=8, scope='pool1')
+                conv4_att = slim.conv2d(ds_mask, 512 * 3, [1,1], scope='conv4')
+                ds_mask = slim.max_pool2d(ds_mask, [2, 2], scope = 'pool4')
+                conv5_att = slim.conv2d(ds_mask, 512 * 3, [1,1], scope='conv5')
         with tf.variable_scope('seg'):
             # Collect outputs of all intermediate layers.
             with slim.arg_scope([slim.conv2d],
                                 padding='SAME',
                                 outputs_collections=end_points_collection):
               with slim.arg_scope([slim.max_pool2d], padding='SAME'):
-                net = slim.repeat(inputs[1], 2, slim.conv2d, 64, [3, 3], scope='conv1')
+                net = slim.repeat(inputs[2], 2, slim.conv2d, 64, [3, 3], scope='conv1')
                 net = slim.max_pool2d(net, [2, 2], scope='pool1')
                 net_2 = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='conv2')
                 net = slim.max_pool2d(net_2, [2, 2], scope='pool2')
                 net_3 = slim.repeat(net, 3, slim.conv2d, 256, [3, 3], scope='conv3')
                 net_4 = slim.max_pool2d(net_3, [2, 2], scope='pool3')
                 prev_mod_id = 0
+                prev_sp_id = 0
                 for i in range(3):
                     net_4 = slim.conv2d(net_4, 512, [3,3], scope='conv4/conv4_{}'.format(i+1))
                     m_params = tf.slice(modulator_params, [0,prev_mod_id], [batch_size,512], name = 'm_param4')
                     net_4 = conditional_normalization(net_4, m_params, scope='conv4/conv4_{}'.format(i+1))
+                    sp_params = tf.slice(conv4_att, [0, 0, 0, prev_sp_id], [batch_size, -1, -1 , 512], name = 'm_sp_param4')
+                    net_4 = tf.add(net_4, sp_params)
                     prev_mod_id += 512
+                    prev_sp_id += 512
                 net_5 = slim.max_pool2d(net_4, [2, 2], scope='pool4')
+                prev_sp_id = 0
                 for i in range(3):
                     net_5 = slim.conv2d(net_5, 512, [3, 3], scope='conv5/conv5_{}'.format(i+1))
                     m_params = tf.slice(modulator_params, [0,prev_mod_id], [batch_size,512], name = 'm_param5')
                     net_5 = conditional_normalization(net_5, m_params, scope='conv5/conv5_{}'.format(i+1))
+                    sp_params = tf.slice(conv5_att, [0, 0, 0, prev_sp_id], [batch_size, -1, -1, 512], name='m_sp_param5')
+                    net_5 = tf.add(net_5, sp_params)
                     prev_mod_id += 512
+                    prev_sp_id += 512
                 # Get side outputs of the network
                 with slim.arg_scope([slim.conv2d],
                                     activation_fn=None):
@@ -141,6 +159,7 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                     if mod_last_conv:
                         m_params = tf.slice(modulator_params, [0, prev_mod_id], [batch_size, 64], name='m_param6')
                         concat_side = conditional_normalization(concat_side, m_params, scope='concat')
+                        concat_side = tf.add(concat_side, full_att)
                         prev_mod_id += 64
                     with slim.arg_scope([slim.conv2d],
                                         trainable=True, normalizer_fn=None):
@@ -280,11 +299,12 @@ def _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_pat
     # Prepare the input data
     guide_image = tf.placeholder(tf.float32, [batch_size, 224, 224, 3])
     input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
+    gb_image = tf.placeholder(tf.float32, [batch_size, None, None, 1])
     input_label = tf.placeholder(tf.float32, [batch_size, None, None, 1])
 
     # Create the network
     with slim.arg_scope(osmn_arg_scope()):
-        net, end_points = osmn([guide_image, input_image], model_params, is_training=True)
+        net, end_points = osmn([guide_image, gb_image, input_image], model_params, is_training=True)
 
 
     # Define loss
@@ -371,9 +391,9 @@ def _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_pat
         while step < max_training_iters + 1:
             # Average the gradient
             for _ in range(0, iter_mean_grad):
-                batch_g_image, batch_image, batch_label = dataset.next_batch(batch_size, 'train')
+                batch_g_image, batch_gb_image, batch_image, batch_label = dataset.next_batch(batch_size, 'train')
                 run_res = sess.run([total_loss, merged_summary_op] + grad_accumulator_ops,
-                        feed_dict={guide_image: batch_g_image, 
+                        feed_dict={guide_image: batch_g_image, gb_image: batch_gb_image,
                         input_image: batch_image, input_label: batch_label})
                 batch_loss = run_res[0]
                 summary = run_res[1]
@@ -436,11 +456,12 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
     # Input data
 
     guide_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
+    gb_image = tf.placeholder(tf.float32, [batch_size, None, None, 1])
     input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
 
     # Create the cnn
     with slim.arg_scope(osmn_arg_scope()):
-        net, end_points = osmn([guide_image, input_image], model_params, is_training=False)
+        net, end_points = osmn([guide_image, gb_image, input_image], model_params, is_training=False)
     probabilities = tf.nn.sigmoid(net)
     global_step = tf.Variable(0, name='global_step', trainable=False)
 
@@ -454,12 +475,12 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
         if not os.path.exists(result_path):
             os.makedirs(result_path)
         for frame in range(0, dataset.get_test_size(), batch_size):
-            guide_images, images, image_paths = dataset.next_batch(batch_size, 'test')
+            guide_images, gb_images, images, image_paths = dataset.next_batch(batch_size, 'test')
             save_names = [ name.split('.')[0] + '.png' for name in image_paths]
-            res = sess.run(probabilities, feed_dict={guide_image: guide_images, input_image: images})
+            res = sess.run(probabilities, feed_dict={guide_image: guide_images, gb_image:gb_images, input_image: images})
             res_np = res.astype(np.float32)[:, :, :, 0] > 0.5
-            #guide_images += np.array((104, 117, 127))
-            #guide_images /= 255
+            guide_images += np.array((104, 117, 127))
+            guide_images /= 255
             for i in range(min(batch_size, dataset.get_test_size() - frame)):
                 print 'Saving ' + os.path.join(result_path, save_names[i])
                 if len(save_names[i].split('/')) > 1:
@@ -471,4 +492,4 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
                 print 'Saving ' + os.path.join(result_path, curr_score_name) + '.npy'
                 np.save(os.path.join(result_path, curr_score_name), res.astype(np.float32)[i,:,:,0])
 
-                #scipy.misc.imsave(os.path.join(result_path, curr_score_name + '_guide.png'),guide_images[i])
+                scipy.misc.imsave(os.path.join(result_path, curr_score_name + '_guide.png'),guide_images[i])

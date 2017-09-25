@@ -13,11 +13,11 @@ import matplotlib.pyplot as plt
 root_folder = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.abspath(root_folder))
 import osmn
-from dataset_osmn import Dataset
+from dataset_davis import Dataset
 os.chdir(root_folder)
 baseDir = '/raid/ljyang/data'
 # User defined parameters
-val_path = os.path.join(baseDir, 'DAVIS/ImageSets/2017/train.txt')
+val_path = os.path.join(baseDir, 'DAVIS/ImageSets/2017/val.txt')
 with open(val_path, 'r') as f:
     val_seq_names = [line.strip() for line in f]
 test_imgs_with_guide = []
@@ -33,11 +33,12 @@ for name in val_seq_names:
 gpu_id = sys.argv[1]
 result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSMN')
 checkpoint_path = sys.argv[2]
-batch_size = 10
+batch_size = 4
+model_params = {'mod_last_conv': True}
 # Define Dataset
 dataset = Dataset([], test_imgs_with_guide)
 
 # Test the network
 with tf.Graph().as_default():
     with tf.device('/gpu:' + str(gpu_id)):
-        osmn.test(dataset, checkpoint_path, result_path, batch_size =10)
+        osmn.test(dataset, model_params, checkpoint_path, result_path, batch_size = batch_size)
