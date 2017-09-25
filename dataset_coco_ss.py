@@ -12,7 +12,8 @@ from util import to_bgr, mask_image, get_mask_bbox, get_gb_image, data_augmentat
 sys.path.append('../coco/PythonAPI')
 from pycocotools.coco import COCO
 class Dataset:
-    def __init__(self, train_anno_file, test_anno_file, train_image_path, test_image_path, data_aug=False, data_aug_scales=[0.8, 1.0, 1.2]):
+    def __init__(self, train_anno_file, test_anno_file, train_image_path, test_image_path, guide_image_mask=True, 
+            data_aug=False, data_aug_scales=[0.8, 1.0, 1.2]):
         """Initialize the Dataset object
         Args:
         train_anno_file: json file for training data
@@ -29,7 +30,7 @@ class Dataset:
         random.seed(1234)
         self.train_image_path = train_image_path
         self.test_image_path = test_image_path
-        
+        self.guide_image_mask = guide_image_mask 
         self.train_data = COCO(train_anno_file)
         self.test_data = COCO(test_anno_file)
         if os.path.exists('cache/train_annos.pkl'):
@@ -127,7 +128,8 @@ class Dataset:
                 image_data -= self.mean_value
                 guide_image_data -= self.mean_value
                 # masking
-                guide_image_data = mask_image(guide_image_data, guide_label_data)
+                if self.guide_image_mask:
+                    guide_image_data = mask_image(guide_image_data, guide_label_data)
                 images.append(image_data)
                 labels.append(label_data)
                 guide_images.append(guide_image_data)
@@ -173,7 +175,8 @@ class Dataset:
                 gb_image = get_gb_image(label_data) 
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
                 # masking
-                guide_image_data = mask_image(guide_image_data, guide_label_data)
+                if self.guide_image_mask:
+                    guide_image_data = mask_image(guide_image_data, guide_label_data)
                 images.append(image_data)
                 gb_images.append(gb_image)
                 # only need file name for result saving

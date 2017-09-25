@@ -10,6 +10,7 @@ import os
 import scipy.misc
 from PIL import Image
 from ops import conditional_normalization
+from model_init import load_model
 slim = tf.contrib.slim
 
 
@@ -179,42 +180,6 @@ def interp_surgery(variables):
     return interp_tensors
 
 
-def load_vgg_fg_model(ckpt_path):
-    """Initialize the network parameters from a general-purpose foreground segmentation model
-    Args:
-    Path to the checkpoint
-    Returns:
-    Function that takes a session and initilaizes the network
-    """
-    reader = tf.train.NewCheckpointReader(ckpt_path)
-    var_to_shape_map = reader.get_variable_to_shape_map()
-    vars_corresp = dict()
-    for v in var_to_shape_map:
-        if "conv" in v or "upscore" in v:
-            vars_corresp[v] = slim.get_model_variables(v.replace("osvos", "osmn/seg"))[0]
-    init_fn = slim.assign_from_checkpoint_fn(
-            ckpt_path,
-            vars_corresp)
-    return init_fn
-
-def load_vgg_imagenet(ckpt_path):
-    """Initialize the network parameters from the VGG-16 pre-trained model provided by TF-SLIM
-    Args:
-    Path to the checkpoint
-    Returns:
-    Function that takes a session and initializes the network
-    """
-    reader = tf.train.NewCheckpointReader(ckpt_path)
-    var_to_shape_map = reader.get_variable_to_shape_map()
-    vars_corresp = dict()
-    for v in var_to_shape_map:
-        if "conv" in v or "fc6" in v or "fc7" in v:
-            vars_corresp[v] = slim.get_model_variables(v.replace("vgg_16", "osmn/modulator"))[0]
-    init_fn = slim.assign_from_checkpoint_fn(
-        ckpt_path,
-        vars_corresp)
-    return init_fn
-
 
 def class_balanced_cross_entropy_loss(output, label):
     """Define the class balanced cross entropy loss to train the network
@@ -355,9 +320,12 @@ def _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_pat
             step = global_step.eval() + 1
         elif fg_ckpt is not None:
             print('Initializing from pre-trained imagenet model...')
-            load_vgg_imagenet(initial_ckpt)(sess)
-            print('Initializing from foreground model...')
-            load_vgg_fg_model(fg_ckpt)(sess)
+            load_model(initial_ckpt, 'vgg_16', 'osmn/modulator')(sess)
+            if 'vgg_16' in fg_ckpt:
+                load_model(fg_ckpt, 'vgg_16', 'osmn/seg')(sess)
+            else:
+                print('Initializing from foreground model...')
+                load_model(fg_ckpt, 'osvos', 'osmn/seg')(sess)
             step = 1
         else:
             print('Initializing from pre-trained coco model...')

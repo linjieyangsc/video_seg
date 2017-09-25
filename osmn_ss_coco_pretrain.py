@@ -25,12 +25,13 @@ gpu_id = sys.argv[1]
 result_path = os.path.join('COCO', 'OSMN')
 # Train parameters
 init_vgg_path = os.path.join('models', 'vgg_16.ckpt')
-parent_path = os.path.join('models_src', 'OSVOS_parent', 'OSVOS_parent.ckpt-50000')
-logs_path = 'models_coco/osmn_ss'
+#parent_path = os.path.join('models_src', 'OSVOS_parent', 'OSVOS_parent.ckpt-50000')
+logs_path = sys.argv[3]
 max_training_iters = int(sys.argv[2])
 
 # Define Dataset
-dataset = Dataset(train_file, val_file, train_path, val_path, data_aug=True, data_aug_scales=[0.8, 1, 1.2])
+guide_image_mask = False
+dataset = Dataset(train_file, val_file, train_path, val_path, guide_image_mask=False, data_aug=True, data_aug_scales=[0.8, 1, 1.2])
 # More training parameters
 learning_rate = 1e-5
 save_step = max_training_iters / 20
@@ -40,7 +41,7 @@ model_params = {'mod_last_conv':False}
 with tf.Graph().as_default():
     with tf.device('/gpu:' + str(gpu_id)):
         global_step = tf.Variable(0, name='global_step', trainable=False)
-        osmn.train_finetune(dataset, model_params, init_vgg_path, parent_path, learning_rate, logs_path, max_training_iters,
+        osmn.train_finetune(dataset, model_params, init_vgg_path, init_vgg_path, learning_rate, logs_path, max_training_iters,
                              save_step, display_step, global_step, batch_size = batch_size, 
                              iter_mean_grad=1, resume_training=True, ckpt_name='osmn')
 

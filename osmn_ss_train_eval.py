@@ -37,10 +37,13 @@ for name in val_seq_names:
     test_frames = sorted(os.listdir(os.path.join(baseDirImg, name)))
     label_fds = os.listdir(os.path.join(baseDirLabel, name))
     for label_id in label_fds:
+        test_imgs_with_guide += [(os.path.join(baseDirImg, name, '00000.jpg'), 
+            os.path.join(baseDirLabel, name, label_id, '00000.png'),
+                os.path.join(baseDirImg, name, '00001.jpg'))]
         test_imgs_with_guide += [(os.path.join(baseDirImg, name, prev_frame), 
             os.path.join(result_path, name, label_id, prev_frame[:-4]+'.png'),
                 os.path.join(baseDirImg, name, frame)) 
-                for prev_frame, frame in zip(test_frames[:-1], test_frames[1:])]
+                for prev_frame, frame in zip(test_frames[1:-1], test_frames[2:])]
 for name in train_seq_names:
     train_frames = sorted(os.listdir(os.path.join(baseDirImg, name)))
     label_fds = os.listdir(os.path.join(baseDirLabel, name))
@@ -81,4 +84,4 @@ with tf.Graph().as_default():
             checkpoint_path = os.path.join(logs_path, 'osmn.ckpt-'+str(max_training_iters))
         else:
             checkpoint_path = parent_path    
-        osmn.test(dataset, model_params, checkpoint_path, result_path, batch_size=batch_size)
+        osmn.test(dataset, model_params, checkpoint_path, result_path, batch_size=1)
