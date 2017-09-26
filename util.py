@@ -21,14 +21,14 @@ def get_mask_bbox(m, border_pixels=8):
     xmin = max(0, xmin - border_pixels)
     xmax = min(w-1, xmax + border_pixels)
     return (xmin, ymin, xmax, ymax)
-def get_gb_image(label, center_perturb = 0.3, std_perturb=0.3):
-    if not np.any(label):
+def get_gb_image(label, center_perturb = 0.4, std_perturb=1, blank_prob=0.2):
+    if not np.any(label) or random.random() < blank_prob:
         #return a blank gb image
         return np.zeros((label.shape))
     center, std = compute_robust_moments(label)
     center_p_ratio = np.random.uniform(-center_perturb, center_perturb, 2)
     center_p = center_p_ratio * std + center
-    std_p_ratio = np.random.uniform(1.0 - std_perturb, 1.0 + std_perturb, 2)
+    std_p_ratio = np.random.uniform(1.0 / (1 + std_perturb), 1.0 + std_perturb, 2)
     std_p = std_p_ratio * std
     h,w = label.shape
     x = np.arange(0, w)

@@ -7,7 +7,7 @@ import numpy as np
 import sys
 import random
 import cPickle
-from util import get_mask_bbox
+from util import to_bgr, mask_image, data_augmentation, get_mask_bbox
 sys.path.append('../coco/PythonAPI')
 from pycocotools.coco import COCO
 class Dataset:
@@ -95,6 +95,8 @@ class Dataset:
             if self.data_aug_scales:
                 scale = random.choice(self.data_aug_scales)
                 new_size = (int(self.size[0] * scale), int(self.size[1] * scale))
+            else:
+                new_size = self.size
             for i in idx:
                 anno = self.train_annos[i]
                 image_path = self.train_image_path.format(anno['image_id'])
@@ -107,20 +109,19 @@ class Dataset:
                 guide_image = guide_image.resize(self.guide_size, Image.BILINEAR)
                 guide_label = guide_label.resize(self.guide_size, Image.NEAREST)
 
-                if self.data_aug:
-                    image, label = self.data_augmentation(image, label, new_size)
+                
+                image, label = data_augmentation(image, label, new_size,
+                        self.data_aug_flip)
                 image_data = np.array(image, dtype=np.float32)
                 label_data = np.array(label, dtype=np.float32)
                 guide_image_data = np.array(guide_image, dtype=np.float32)
-                if len(image_data.shape) < 3:
-                    image_data = np.repeat(image_data[...,np.newaxis], 3, axis=2)
-                    guide_image_data = np.repeat(guide_image_data[...,np.newaxis], 3, axis=2)
-                image_data = image_data[:,:,2::-1] - self.mean_value
-                guide_image_data = guide_image_data[:,:,2::-1] - self.mean_value
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
+                image_data = to_bgr(image_data)
+                guide_image_data = to_bgr(guide_image_data)
+                image_data -= self.mean_value
+                guide_image_data -= self.mean_value
                 # masking
-                for ch in range(guide_image_data.shape[2]):
-                    guide_image_data[guide_label_data == 0, ch] = 0
+                guide_image_data = mask_image(guide_image_data, guide_label_data)
                 images.append(image_data)
                 labels.append(label_data)
                 guide_images.append(guide_image_data)
@@ -155,15 +156,13 @@ class Dataset:
                 label = label.resize(self.size, Image.NEAREST)
                 image_data = np.array(image, dtype=np.float32)
                 guide_image_data = np.array(guide_image, dtype=np.float32)
-                if len(image_data.shape) < 3:
-                    image_data = np.repeat(image_data[...,np.newaxis], 3, axis=2)
-                    guide_image_data = np.repeat(guide_image_data[...,np.newaxis], 3, axis=2)
-                image_data = image_data[:,:,2::-1] - self.mean_value
-                guide_image_data = guide_image_data[:,:,2::-1] - self.mean_value
+                image_data = to_bgr(image_data)
+                guide_image_data = to_bgr(guide_image_data)
+                image_data -= self.mean_value
+                guide_image_data -= self.mean_value
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
                 # masking
-                for ch in range(guide_image_data.shape[2]):
-                    guide_image_data[guide_label_data == 0, ch] = 0
+                guide_image_data = mask_image(guide_image_data, guide_label_data)
                 images.append(image_data)
                 # only need file name for result saving
                 image_paths.append(image_path.split('/')[-1])
@@ -175,15 +174,6 @@ class Dataset:
         else:
             return None, None, None
     
-    def data_augmentation(self, im, label, new_size):
-        im = im.resize(new_size, Image.BILINEAR)
-        label = label.resize(new_size, Image.NEAREST)
-        if self.data_aug_flip:
-            if random.random() > 0.5:
-                im = im.transpose(Image.FLIP_LEFT_RIGHT)
-                label = label.transpose(Image.FLIP_LEFT_RIGHT)
-        return im, label
-
     def get_train_size(self):
         return self.train_size
 

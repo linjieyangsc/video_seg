@@ -8,7 +8,7 @@ import sys
 import random
 from util import get_mask_bbox, get_gb_image, to_bgr, mask_image
 class Dataset:
-    def __init__(self, train_list, test_list, data_aug=False, data_aug_scales=[0.5, 0.8, 1]):
+    def __init__(self, train_list, test_list, guide_image_mask=True, data_aug=False, data_aug_scales=[0.5, 0.8, 1]):
         """Initialize the Dataset object
         Args:
         train_list: TXT file or list with the paths of the images to use for training (Images must be between 0 and 255)
@@ -20,7 +20,7 @@ class Dataset:
         self.data_aug_flip = data_aug
         self.data_aug_scales = data_aug_scales
         random.seed(1234)
-        
+        self.guide_image_mask = guide_image_mask
         # Init parameters
         self.train_list = train_list
         self.test_list = test_list
@@ -65,15 +65,26 @@ class Dataset:
                 new_size = (int(self.size[0] * scale), int(self.size[1] * scale))
             for i in idx:
                 sample = self.train_list[i]
-                guide_image = Image.open(sample[0])
-                guide_label = Image.open(sample[1])
-                image = Image.open(sample[2])
-                label = Image.open(sample[3])
+                if len(sample) == 4:
+                    # guide image is both for appearance and location guidance
+                    guide_image = Image.open(sample[0])
+                    guide_label = Image.open(sample[1])
+                    image = Image.open(sample[2])
+                    label = Image.open(sample[3])
+                    ref_label = guide_label
+                else:
+                    # guide image is only for appearance guidance, ref label is only for location guidance
+                    guide_image = Image.open(sample[0])
+                    guide_label = Image.open(sample[1])
+                    #guide_image = Image.open(sample[2])
+                    ref_label = Image.open(sample[2])
+                    image = Image.open(sample[3])
+                    label = Image.open(sample[4])
                 if self.data_aug:
-                    image, label, guide_label_new = \
-                            self.data_augmentation(image, label, guide_label, new_size)
+                    image, label, ref_label_new = \
+                            self.data_augmentation(image, label, ref_label, new_size)
                 bbox = get_mask_bbox(np.array(guide_label))
-                gb_image = get_gb_image(np.array(guide_label_new))
+                gb_image = get_gb_image(np.array(ref_label_new))
                 guide_image = guide_image.crop(bbox)
                 guide_label = guide_label.crop(bbox)
                 guide_image = guide_image.resize(self.guide_size, Image.BILINEAR)
@@ -90,7 +101,8 @@ class Dataset:
                 guide_image_data -= self.mean_value
                 image_data -= self.mean_value
                 guide_label_data = np.array(guide_label,dtype=np.uint8)
-                guide_image_data = mask_image(guide_image_data, guide_label_data)
+                if self.guide_image_mask:
+                    guide_image_data = mask_image(guide_image_data, guide_label_data)
                 guide_images.append(guide_image_data)
                 gb_images.append(gb_image)
                 images.append(image_data)
@@ -117,12 +129,22 @@ class Dataset:
                 self.test_ptr = new_ptr
             for i in idx:
                 sample = self.test_list[i]
-                guide_image = Image.open(sample[0])
-                guide_label = Image.open(sample[1])
-                image = Image.open(sample[2])
+                if len(sample) == 3:
+                    guide_image = Image.open(sample[0])
+                    guide_label = Image.open(sample[1])
+                    image = Image.open(sample[2])
+                    ref_label = guide_label
+                    ref_name = os.path.join(*(sample[1].split('/')[-3:-1] + [sample[2].split('/')[-1]]))
+                else:
+                    guide_image = Image.open(sample[0])
+                    guide_label = Image.open(sample[1])
+                    ref_label = Image.open(sample[2])
+                    ref_name = os.path.join(*(sample[1].split('/')[-3:-1] + [sample[3].split('/')[-1]]))
+                    image = Image.open(sample[3])
                 bbox = get_mask_bbox(np.array(guide_label))
-                guide_label_new = guide_label.resize(self.size, Image.NEAREST)
-                gb_image = get_gb_image(np.array(guide_label_new))
+                ref_label_new = ref_label.resize(self.size, Image.NEAREST)
+                gb_image = get_gb_image(np.array(ref_label_new), center_perturb=0, std_perturb=0,
+                        blank_prob=0)
                 guide_image = guide_image.crop(bbox)
                 guide_label = guide_label.crop(bbox)
                 guide_image = guide_image.resize(self.guide_size, Image.BILINEAR)
@@ -139,7 +161,7 @@ class Dataset:
                 guide_images.append(guide_image_data)
                 gb_images.append(gb_image)
                 images.append(image_data)
-                image_paths.append(os.path.join(*(sample[1].split('/')[-3:-1] + [sample[2].split('/')[-1]])))
+                image_paths.append(ref_name)
             images = np.array(images)
             gb_images = np.array(gb_images)[...,np.newaxis]
             guide_images = np.array(guide_images) 

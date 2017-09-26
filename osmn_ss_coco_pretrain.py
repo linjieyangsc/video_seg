@@ -30,8 +30,8 @@ logs_path = sys.argv[3]
 max_training_iters = int(sys.argv[2])
 
 # Define Dataset
-guide_image_mask = False
-dataset = Dataset(train_file, val_file, train_path, val_path, guide_image_mask=False, data_aug=True, data_aug_scales=[0.8, 1, 1.2])
+guide_image_mask = True
+dataset = Dataset(train_file, val_file, train_path, val_path, guide_image_mask=guide_image_mask, data_aug=True, data_aug_scales=[0.8, 1, 1.2])
 # More training parameters
 learning_rate = 1e-5
 save_step = max_training_iters / 20
