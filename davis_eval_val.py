@@ -23,9 +23,6 @@ sav_path = 'DAVIS/Visualize'
 listFile = '/raid/ljyang/data/DAVIS/ImageSets/2017/val.txt'
 with open(listFile, 'r') as f:
     fds = [line.strip() for line in f]
-orderFile = '/raid/ljyang/data/DAVIS/label_order_val.txt'
-with open(orderFile, 'r') as f:
-    orders = [line.strip().split() for line in f]
 im_num = 0
 iou =[] 
 seq_n = 0
@@ -42,7 +39,6 @@ for i, fd in enumerate(fds):
     for sub_fd in sub_fds:
         subfd_names.append(fd+'/'+sub_fd)
     iou_seq = []
-    order = dict([(int(idx) -1, idy) for idy,idx in enumerate(orders[i])])
     for im_name in im_list[1:-1]:
         iou_im = 0
         scores = []
@@ -51,7 +47,6 @@ for i, fd in enumerate(fds):
 
             score = np.load(os.path.join(pred_path, fd, sub_fd, im_name[:-4] + '.npy'))
             scores.append(score)
-        scores = [scores[order[idx]] for idx in range(len(order))]
         im_size = scores[0].shape
         bg_score = np.ones(im_size) * 0.5
         scores = [bg_score] + scores

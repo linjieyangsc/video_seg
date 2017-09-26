@@ -77,7 +77,7 @@ with tf.Graph().as_default():
 with tf.Graph().as_default():
     with tf.device('/gpu:' + str(gpu_id)):
         if train_model:
-            checkpoint_path = os.path.join(logs_path, 'osmn.ckpt-'+str(global_step.eval()))
+            checkpoint_path = os.path.join(logs_path, 'osmn.ckpt-'+str(max_training_iters))
         else:
             checkpoint_path = parent_path    
         osmn.test(dataset, model_params, checkpoint_path, result_path, batch_size=batch_size)

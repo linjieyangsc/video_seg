@@ -172,7 +172,7 @@ class Dataset:
                 image_data -= self.mean_value
                 guide_image_data -= self.mean_value
                 label_data = np.array(label, dtype=np.uint8)
-                gb_image = get_gb_image(label_data) 
+                gb_image = get_gb_image(label_data, center_perturb=0, std_perturb=0, blank_prob=0) 
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
                 # masking
                 if self.guide_image_mask:
