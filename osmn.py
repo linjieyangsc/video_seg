@@ -310,7 +310,7 @@ def _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_pat
         summary_writer = tf.summary.FileWriter(logs_path, graph=tf.get_default_graph())
 
         # Create saver to manage checkpoints
-        saver = tf.train.Saver(max_to_keep=None)
+        saver = tf.train.Saver(max_to_keep=1)
 
         last_ckpt_path = tf.train.latest_checkpoint(logs_path)
         if last_ckpt_path is not None and resume_training:

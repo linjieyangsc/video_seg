@@ -61,7 +61,7 @@ dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide, data_aug=True, da
 learning_rate = 1e-6
 display_step = 10
 batch_size = 4
-model_params = {'mod_last_conv':False}
+model_params = {'mod_last_conv':True}
 with tf.Graph().as_default():
     with tf.device('/gpu:' + str(gpu_id)):
         if train_model:

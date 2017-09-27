@@ -3,9 +3,9 @@ Train / validation script
 One-Shot Modulation Netowrk
 Usage:
 For training and validation:
-    python osmn_train_eval.py [GPU_ID] [PARENT_MODEL_PATH] [TRAINING ITERS]
-For validation only:
-    python osmn_train_eval.py [GPU_ID] [MODEL_PATH]
+    python osmn_train_eval.py [GPU_ID] [PARENT_MODEL_PATH] [RESULT_PATH] [MODEL_SAVE_PATH] [TRAINING ITERS]
+For validation only: 
+    python osmn_train_eval.py [GPU_ID] [MODEL_PATH] [RESULT_PATH]
 """
 import os
 import sys
@@ -28,12 +28,12 @@ with open(val_path, 'r') as f:
     val_seq_names = [line.strip() for line in f]
 with open(train_path, 'r') as f:
     train_seq_names = [line.strip() for line in f]
-use_static_guide = True # only use the first frame as appearance guide
+use_static_guide = False# only use the first frame as appearance guide
 test_imgs_with_guide = []
 train_imgs_with_guide = []
 baseDirImg = os.path.join(baseDir, 'DAVIS', 'JPEGImages', '480p')
 baseDirLabel = os.path.join(baseDir, 'DAVIS', 'Annotations', '480p_split')
-result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSMN')
+result_path = sys.argv[3]#os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSMN')
 for name in val_seq_names:
     test_frames = sorted(os.listdir(os.path.join(baseDirImg, name)))
     label_fds = os.listdir(os.path.join(baseDirLabel, name))
@@ -71,10 +71,9 @@ for name in train_seq_names:
                 os.path.join(baseDirLabel, name, label_id, frame[:-4] + '.png'))
                 for prev_frame, frame in zip(train_frames[:-1], train_frames[1:])]
 gpu_id = sys.argv[1]
-train_model = True if len(sys.argv) > 3 else False
+train_model = True if len(sys.argv) > 4 else False
 # Train parameters
 parent_path = sys.argv[2] #os.path.join('models_coco', 'osmn3', 'osmn.ckpt-45000')
-logs_path = 'models_osmn/ss_static_guide'
 
 # Define Dataset
 dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide, data_aug=True, data_aug_scales=[0.5, 0.8, 1])
@@ -86,8 +85,9 @@ model_params = {'mod_last_conv':False}
 with tf.Graph().as_default():
     with tf.device('/gpu:' + str(gpu_id)):
         if train_model:
-            max_training_iters = int(sys.argv[3])
+            max_training_iters = int(sys.argv[5])
             save_step = max_training_iters / 10
+            logs_path = sys.argv[4]
             global_step = tf.Variable(0, name='global_step', trainable=False)
             osmn.train_finetune(dataset, model_params, parent_path, None, learning_rate, logs_path, max_training_iters,
                              save_step, display_step, global_step, 
