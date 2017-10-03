@@ -3,7 +3,7 @@ Provides utility functions for OSMN library
 """
 import os
 import numpy as np
-from image_util import compute_robust_moments
+#from image_util import compute_robust_moments
 from PIL import Image
 import random
 #import random
@@ -21,6 +21,25 @@ def get_mask_bbox(m, border_pixels=8):
     xmin = max(0, xmin - border_pixels)
     xmax = min(w-1, xmax + border_pixels)
     return (xmin, ymin, xmax, ymax)
+def compute_robust_moments(binary_image, isotropic=False):
+  index = np.nonzero(binary_image)
+  points = np.asarray(index).astype(np.float32)
+  if points.shape[1] == 0:
+    return np.array([-1.0,-1.0],dtype=np.float32), \
+        np.array([-1.0,-1.0],dtype=np.float32)
+  points = np.transpose(points)
+  points[:,[0,1]] = points[:,[1,0]]
+  center = np.median(points, axis=0)
+  if isotropic:
+    diff = np.linalg.norm(points - center, axis=1)
+    mad = np.median(diff)
+    mad = np.array([mad,mad])
+  else:
+    diff = np.absolute(points - center)
+    mad = np.median(diff, axis=0)
+  std_dev = 1.4826*mad
+  std_dev = np.maximum(std_dev, [5.0, 5.0])
+  return center, std_dev
 def get_gb_image(label, center_perturb = 0.2, std_perturb=0.4, blank_prob=0.2):
     if not np.any(label) or random.random() < blank_prob:
         #return a blank gb image
