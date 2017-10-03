@@ -151,7 +151,10 @@ class Dataset:
                 self.test_ptr += batch_size
             else:
                 new_ptr = (self.test_ptr + batch_size) % self.test_size
-                idx = np.array(self.test_idx[self.test_ptr:] + self.test_idx[:new_ptr])
+                if new_ptr == 0:
+                    idx = np.aray(self.test_idx[self.test_ptr:])
+                else:
+                    idx = np.array(self.test_idx[self.test_ptr:] + self.test_idx[:new_ptr])
                 self.test_ptr = new_ptr
             for i in idx:
                 anno = self.test_annos[i]

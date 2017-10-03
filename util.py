@@ -21,7 +21,7 @@ def get_mask_bbox(m, border_pixels=8):
     xmin = max(0, xmin - border_pixels)
     xmax = min(w-1, xmax + border_pixels)
     return (xmin, ymin, xmax, ymax)
-def get_gb_image(label, center_perturb = 0.4, std_perturb=1, blank_prob=0.2):
+def get_gb_image(label, center_perturb = 0.2, std_perturb=0.4, blank_prob=0.2):
     if not np.any(label) or random.random() < blank_prob:
         #return a blank gb image
         return np.zeros((label.shape))

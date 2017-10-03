@@ -59,7 +59,8 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
     guide_im_size = tf.shape(inputs[0])
     im_size = tf.shape(inputs[2])
     batch_size = inputs[1].get_shape().as_list()[0]
-    mod_last_conv = model_params.get('mod_last_conv', False)
+    mod_last_conv = model_params.mod_last_conv
+    sp_late_fusion = model_params.sp_late_fusion
     n_modulator_param = 512 * 6 + mod_last_conv * 64
 
     with tf.variable_scope(scope, [inputs]) as sc:
@@ -94,15 +95,24 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                 modulator_params = tf.squeeze(modulator_params, [1,2])
         #with tf.variable_scope(scope, [inputs], reuse=True) as sc:
         with tf.variable_scope('modulator_sp'):
-            with slim.arg_scope([slim.conv2d, slim.max_pool2d],
+            with slim.arg_scope([slim.conv2d, slim.avg_pool2d],
                                 padding='SAME', outputs_collections=end_points_collection):
-                if mod_last_conv:
-                    full_att = slim.conv2d(inputs[1], 64, [1,1], scope='full')
 
-                ds_mask = slim.max_pool2d(inputs[1], [8, 8], stride=8, scope='pool1')
-                conv4_att = slim.conv2d(ds_mask, 512 * 3, [1,1], scope='conv4')
-                ds_mask = slim.max_pool2d(ds_mask, [2, 2], scope = 'pool4')
-                conv5_att = slim.conv2d(ds_mask, 512 * 3, [1,1], scope='conv5')
+                if sp_late_fusion:
+                    ds_mask = slim.avg_pool2d(inputs[1], [8, 8], scope='pool1')
+                    conv2_att = slim.conv2d(ds_mask, 16, [3,3], scope='conv2')
+                    ds_mask = slim.avg_pool2d(ds_mask, [4, 4], scope='pool2')
+                    conv3_att = slim.conv2d(ds_mask, 16, [3,3], scope='conv3')
+                    ds_mask = slim.avg_pool2d(ds_mask, [2,2], scope='pool3')
+                    conv4_att = slim.conv2d(ds_mask, 16, [3,3], scope='conv4')
+                    ds_mask = slim.avg_pool2d(ds_mask, [2, 2], scope = 'pool4')
+                    conv5_att = slim.conv2d(ds_mask, 16, [3,3], scope='conv5')
+                else:
+
+                    ds_mask = slim.avg_pool2d(inputs[1], [8, 8], stride=8, scope='pool1')
+                    conv4_att = slim.conv2d(ds_mask, 512 * 3, [1,1], scope='conv4')
+                    ds_mask = slim.avg_pool2d(ds_mask, [2, 2], scope = 'pool4')
+                    conv5_att = slim.conv2d(ds_mask, 512 * 3, [1,1], scope='conv5')
         with tf.variable_scope('seg'):
             # Collect outputs of all intermediate layers.
             with slim.arg_scope([slim.conv2d],
@@ -121,20 +131,22 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                     net_4 = slim.conv2d(net_4, 512, [3,3], scope='conv4/conv4_{}'.format(i+1))
                     m_params = tf.slice(modulator_params, [0,prev_mod_id], [batch_size,512], name = 'm_param4')
                     net_4 = conditional_normalization(net_4, m_params, scope='conv4/conv4_{}'.format(i+1))
-                    sp_params = tf.slice(conv4_att, [0, 0, 0, prev_sp_id], [batch_size, -1, -1 , 512], name = 'm_sp_param4')
-                    net_4 = tf.add(net_4, sp_params)
                     prev_mod_id += 512
-                    prev_sp_id += 512
+                    if not sp_late_fusion:
+                        sp_params = tf.slice(conv4_att, [0, 0, 0, prev_sp_id], [batch_size, -1, -1 , 512], name = 'm_sp_param4')
+                        net_4 = tf.add(net_4, sp_params)
+                        prev_sp_id += 512
                 net_5 = slim.max_pool2d(net_4, [2, 2], scope='pool4')
                 prev_sp_id = 0
                 for i in range(3):
                     net_5 = slim.conv2d(net_5, 512, [3, 3], scope='conv5/conv5_{}'.format(i+1))
                     m_params = tf.slice(modulator_params, [0,prev_mod_id], [batch_size,512], name = 'm_param5')
                     net_5 = conditional_normalization(net_5, m_params, scope='conv5/conv5_{}'.format(i+1))
-                    sp_params = tf.slice(conv5_att, [0, 0, 0, prev_sp_id], [batch_size, -1, -1, 512], name='m_sp_param5')
-                    net_5 = tf.add(net_5, sp_params)
                     prev_mod_id += 512
-                    prev_sp_id += 512
+                    if not sp_late_fusion:
+                        sp_params = tf.slice(conv5_att, [0, 0, 0, prev_sp_id], [batch_size, -1, -1, 512], name='m_sp_param5')
+                        net_5 = tf.add(net_5, sp_params)
+                        prev_sp_id += 512
                 # Get side outputs of the network
                 with slim.arg_scope([slim.conv2d],
                                     activation_fn=None):
@@ -142,6 +154,11 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                     side_3 = slim.conv2d(net_3, 16, [3, 3], scope='conv3_3_16')
                     side_4 = slim.conv2d(net_4, 16, [3, 3], scope='conv4_3_16')
                     side_5 = slim.conv2d(net_5, 16, [3, 3], scope='conv5_3_16')
+                    if sp_late_fusion:
+                        side_2 = tf.add(side_2, conv2_att)
+                        side_3 = tf.add(side_3, conv3_att)
+                        side_4 = tf.add(side_4, conv4_att)
+                        side_5 = tf.add(side_5, conv5_att)
 
                     with slim.arg_scope([slim.convolution2d_transpose],
                                         activation_fn=None, biases_initializer=None, padding='VALID',
@@ -158,10 +175,9 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                         side_5_f = crop_features(side_5_f, im_size)
                     concat_side = tf.concat([side_2_f, side_3_f, side_4_f, side_5_f], axis=3)
                     if mod_last_conv:
-                        m_params = tf.slice(modulator_params, [0, prev_mod_id], [batch_size, 64], name='m_param6')
-                        concat_side = conditional_normalization(concat_side, m_params, scope='concat')
-                        concat_side = tf.add(concat_side, full_att)
-                        prev_mod_id += 64
+                        m_params = tf.slice(modulator_params, [0, prev_mod_id], [batch_size, 64], name='m_param_fuse')
+                        concat_side = conditional_normalization(concat_side, m_params, scope='conat')
+
                     with slim.arg_scope([slim.conv2d],
                                         trainable=True, normalizer_fn=None):
                         net = slim.conv2d(concat_side, 1, [1, 1], scope='upscore-fuse')
@@ -227,11 +243,24 @@ def class_balanced_cross_entropy_loss(output, label):
     return final_loss
 
 
-
+def binary_seg_summary(images, predictions):
+    unnormalized_images = images +  np.array((104, 117, 123)) 
+    unnormalized_images = tf.cast(unnormalized_images, tf.float32)
+    foreground_predictions = tf.less(0.5, predictions) 
+    foreground_labels = tf.cast(foreground_predictions, tf.float32)
+    batch_size = images.get_shape().as_list()[0]
+    results = tf.add(unnormalized_images * 0.5, foreground_labels * 255 * 0.5)
+    results = tf.cast(results, tf.uint8)
+    return tf.summary.image('prediction_images', results, batch_size)
+    #for idx in range(batch_size):
+    #    image = tf.slice(unnormalized_images, [idx,0,0,0],[idx+1,-1,-1,-1])
+    #    pred = tf.slice(foregroung_labels, [idx, 0,0,0], [idx+1, -1,-1,1])
+    #    results = tf.add(images * 0.6, foreground_labels * 0.4)
+    #    tf.summary.image('fgd_prediction_im%d'%idx, results, 3)
 
 def _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_path, max_training_iters, save_step, display_step,
            global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False, config=None, finetune=1,
-           test_image_path=None, ckpt_name="osmn"):
+           test_model=True, ckpt_name="osmn"):
     """Train OSVOS
     Args:
     dataset: Reference to a Dataset object instance
@@ -309,9 +338,10 @@ def _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_pat
     merged_summary_op = tf.summary.merge_all()
 
     # Log evolution of test image
-    if test_image_path is not None:
+    if test_model:
         probabilities = tf.nn.sigmoid(net)
-        img_summary = tf.summary.image("Output probabilities", probabilities, max_outputs=1)
+        img_summary = binary_seg_summary(input_image, probabilities)
+        #img_summary = tf.summary.image("Output probabilities", probabilities, max_outputs=1)
     # Initialize variables
     init = tf.global_variables_initializer()
 
@@ -374,6 +404,11 @@ def _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_pat
 
             # Display training status
             if step % display_step == 0:
+                if test_model:
+                    test_g_image, test_gb_image, test_image, _ = dataset.next_batch(batch_size, 'test')
+                    curr_output = sess.run(img_summary, feed_dict={guide_image:test_g_image, gb_image:test_gb_image,
+                    input_image: test_image })
+                    summary_writer.add_summary(curr_output, step)
                 print >> sys.stderr, "{} Iter {}: Training Loss = {:.4f}".format(datetime.now(), step, batch_loss)
 
             # Save a checkpoint
@@ -393,7 +428,7 @@ def _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_pat
 
 def train_finetune(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_path, max_training_iters, save_step,
                    display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
-                   config=None, test_image_path=None, ckpt_name="osmn"):
+                   config=None, test_model=True, ckpt_name="osmn"):
     """Finetune OSVOS
     Args:
     See _train()
@@ -401,7 +436,7 @@ def train_finetune(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, 
     """
     finetune = 1
     _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_path, max_training_iters, save_step, display_step,
-           global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, test_image_path,
+           global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, test_model,
            ckpt_name)
 
 
@@ -447,7 +482,7 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
             save_names = [ name.split('.')[0] + '.png' for name in image_paths]
             res = sess.run(probabilities, feed_dict={guide_image: guide_images, gb_image:gb_images, input_image: images})
             res_np = res.astype(np.float32)[:, :, :, 0] > 0.5
-            guide_images += np.array((104, 117, 127))
+            guide_images += np.array((104, 117, 123))
             guide_images /= 255
             for i in range(min(batch_size, dataset.get_test_size() - frame)):
                 print 'Saving ' + os.path.join(result_path, save_names[i])
