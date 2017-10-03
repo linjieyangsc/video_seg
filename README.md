@@ -1,17 +1,10 @@
-# OSVOS: One-Shot Video Object Segmentation
-Check our [project page](http://www.vision.ee.ethz.ch/~cvlsegmentation/osvos) for additional information.
-![OSVOS](doc/ims/osvos.png)
-
-OSVOS is a method that tackles the task of semi-supervised video object segmentation. It is based on a fully-convolutional neural network architecture that is able to successively transfer generic semantic information, learned on ImageNet, to the task of foreground segmentation, and finally to learning the appearance of a single annotated object of the test sequence (hence one-shot). Experiments on DAVIS show that OSVOS is faster than currently available techniques and improves the state of the art by a significant margin (79.8% vs 68.0%).
-
-
-This TensorFlow code is a posteriori implementation of OSVOS and it does not contain the boundary snapping branch. The results published in the paper were obtained using the Caffe version that can be found at [OSVOS-caffe](https://github.com/kmaninis/OSVOS-caffe).
+# OSMN: One-Shot Modulation Network for Semi-supervised Video Segmentation
 
 
 ### Installation:
-1. Clone the OSVOS-TensorFlow repository
+1. Clone the repository
    ```Shell
-   git clone https://github.com/kmaninis/OSVOS-TensorFlow.git
+   git clone https://github.sc-corp.net/linjie-yang/video_segmentation.git
    ```
 2. Install if necessary the required dependencies:
    
@@ -19,31 +12,16 @@ This TensorFlow code is a posteriori implementation of OSVOS and it does not con
    - Tensorflow r1.0 or higher (`pip install tensorflow-gpu`) along with standard [dependencies](https://www.tensorflow.org/install/install_linux)
    - Other python dependencies: PIL (Pillow version), numpy, scipy, matplotlib
    
-3. Download the parent model from [here](https://data.vision.ee.ethz.ch/csergi/share/OSVOS/OSVOS_parent_model.zip) (55 MB) and unzip it under `models/` (It should create a folder named 'OSVOS_parent').
 
-4. All the steps to re-train OSVOS are provided in this repository. In case you would like to test with the pre-trained models, you can download them from  [here](https://data.vision.ee.ethz.ch/csergi/share/OSVOS/OSVOS_pre-trained_models.zip) (2.2GB) and unzip them under `models/` (It should create a folder for every model).
 
-### Demo online training and testing
-1. Edit in file `osvos_demo.py` the 'User defined parameters' (eg. gpu_id, train_model, etc).
+### Pre-training the network on MS-COCO
+1. Download MS-COCO 2017 dataset from [here](http://cocodataset.org/#download).
+2. Download the VGG 16 model trained on Imagenet from the TF model zoo from [here](http://download.tensorflow.org/models/vgg_16_2016_08_28.tar.gz).
+3. Place the vgg_16.ckpt file inside `models/`.
+4. Run `python osmn_vs_coco_pretrain.py --data_path DATA_PATH --result_path RESULT_PATH --model_save_path MODEL_SAVE_PATH --gpu_id GPU_ID` to train the model. Other arguments can be seen by running `python osmn_vs_coco_pretrain.py -h`.
 
-2. Run `python osvos_demo.py`.
+#Fine-tuning the network on DAVIS
+1. Download DAVIS 2017 dataset from [here](http://davischallenge.org/code.html).
+2. Preprocess the dataset by running `python preprocessing/parseData.py DATA_DIR`.
+3. Run `python osmn_vs_train_eval.py --data_path DATA_PATH --src_model_path SRC_MDOEL_PATH --result_path RESULT_PATH --model_save_path MODEL_SAVE_PATH --gpu_id GPU_ID`. Other arguments can be seen by running `python osmn_vs_train_eval.py -h`.
 
-It is possible to work with all sequences of DAVIS just by creating a soft link (`ln -s /path/to/DAVIS/  DAVIS`) in the root folder of the project.
-
-### Training the parent network (optional)
-1. All the traning sequences of DAVIS are required to train the parent model, thus download it from [here](https://graphics.ethz.ch/Downloads/Data/Davis/DAVIS-data.zip) if you don't have it. 
-2. Place the dataset in this repository or create a soft link to it (`ln -s /path/to/DAVIS/ DAVIS`) if you have it somewhere else.
-3. Download the VGG 16 model trained on Imagenet from the TF model zoo from [here](http://download.tensorflow.org/models/vgg_16_2016_08_28.tar.gz).
-4. Place the vgg_16.ckpt file inside `models/`.
-5. Edit the 'User defined parameters' (eg. gpu_id) in file `osvos_parent_demo.py`.
-6. Run `python osvos_parent_demo.py`. This step takes 20 hours to train (Titan-X Pascal), and ~15GB for loading data and online data augmentation. Change dataset.py accordingly, to adjust to a less memory-intensive setup.
-
-Have a happy training!
-
-### Citation:
-	@Inproceedings{Cae+17,
-	  Title          = {One-Shot Video Object Segmentation},
-	  Author         = {S. Caelles and K.K. Maninis and J. Pont-Tuset and L. Leal-Taix\'e and D. Cremers and L. {Van Gool}},
-	  Booktitle      = {Computer Vision and Pattern Recognition (CVPR)},
-	  Year           = {2017}
-	}

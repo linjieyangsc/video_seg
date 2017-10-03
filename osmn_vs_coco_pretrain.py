@@ -9,8 +9,8 @@ import numpy as np
 import tensorflow as tf
 slim = tf.contrib.slim
 import argparse
-import osmn_ss as osmn
-from dataset_coco_ss import Dataset
+import osmn_vs as osmn
+from dataset_coco_vs import Dataset
 
 def add_arguments(parser):
     group = parser.add_argument_group(title='Paths Arguments')
@@ -54,7 +54,8 @@ def add_arguments(parser):
             required=False,
             default=[0.8,1,1.2])
     group.add_argument(
-            '--guide_image_mask',
+            '--no_guide_image_mask',
+            dest='guide_image_mask',
             required=False,
             action='store_false',
             default=True)
@@ -89,17 +90,26 @@ def add_arguments(parser):
             '--display_iters',
             type=int,
             required=False,
-            default=10)
+            default=20)
     group.add_argument(
-            '--is_training',
+            '--use_image_summary',
             required=False,
-            action='store_false',
-            default=True,
+            action='store_true',
+            default=False,
+            help="""
+                add valdiation image results to tensorboard
+                """)
+    group.add_argument(
+            '--only_testing',
+            required=False,
+            action='store_true',
+            default=False,
             help="""\
                 is it training or testing?
                 """)
     group.add_argument(
-            '--resume_training',
+            '--restart_training',
+            dest='resume_training',
             required=False,
             action='store_false',
             default=True)
@@ -127,18 +137,19 @@ batch_size = args.batch_size
 src_model_path = args.src_model_path
 resume_training = args.resume_training
 result_path = args.result_path
-if args.is_training:
+use_image_summary = args.use_image_summary
+if not args.only_testing:
     with tf.Graph().as_default():
         with tf.device('/gpu:' + str(args.gpu_id)):
             global_step = tf.Variable(0, name='global_step', trainable=False)
             osmn.train_finetune(dataset, args, src_model_path, src_model_path, learning_rate, logs_path, max_training_iters,
                                  save_step, display_step, global_step, batch_size = batch_size, 
-                                 iter_mean_grad=1, resume_training=resume_training, ckpt_name='osmn')
+                                 iter_mean_grad=1, use_image_summary=use_image_summary, resume_training=resume_training, ckpt_name='osmn')
 
 # Test the network
 with tf.Graph().as_default():
     with tf.device('/gpu:' + str(args.gpu_id)):
-        if args.is_training:
+        if not args.only_testing:
             checkpoint_path = os.path.join(logs_path, 'osmn.ckpt-'+str(max_training_iters))
         else:
             checkpoint_path = src_model_path

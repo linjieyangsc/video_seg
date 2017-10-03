@@ -1,11 +1,6 @@
 """
 Train / validation script
 One-Shot Modulation Netowrk
-Usage:
-For training and validation:
-    python osmn_train_eval.py [GPU_ID] [PARENT_MODEL_PATH] [RESULT_PATH] [MODEL_SAVE_PATH] [TRAINING ITERS]
-For validation only: 
-    python osmn_train_eval.py [GPU_ID] [MODEL_PATH] [RESULT_PATH]
 """
 import os
 import sys
@@ -14,8 +9,8 @@ import numpy as np
 import tensorflow as tf
 slim = tf.contrib.slim
 import argparse
-import osmn_ss as osmn
-from dataset_davis_ss import Dataset
+import osmn_vs as osmn
+from dataset_davis_vs import Dataset
 
 def add_arguments(parser):
     group = parser.add_argument_group(title='Paths Arguments')
@@ -43,12 +38,23 @@ def add_arguments(parser):
 
     group = parser.add_argument_group(title='Model Arguments')
     group.add_argument(
-            '--use_static_guide',
+            '--use_prev_guide',
+            dest='use_static_guide',
             required=False,
             action='store_false',
             default=True,
             help="""
                 only use the first frame as visual guide or use the previous frame as visual guide
+                """)
+    group.add_argument(
+            '--online_testing',
+            required=False,
+            action='store_true',
+            default=False,
+            help="""
+                offline testing: use ground truth mask from previous frame as spatial guide
+                online testing: use predicted mask from previous frame as spatial guide
+                default to offline, should be set to offline when there is image summaries
                 """)
     group.add_argument(
             '--mod_last_conv',
@@ -66,6 +72,12 @@ def add_arguments(parser):
             type=list,
             required=False,
             default=[0.5,0.8,1])
+    group.add_argument(
+            '--no_guide_image_mask',
+            dest='guide_image_mask',
+            required=False,
+            action='store_false',
+            default=True)
     group.add_argument(
             '--batch_size',
             type=int,
@@ -97,21 +109,29 @@ def add_arguments(parser):
             '--display_iters',
             type=int,
             required=False,
-            default=10)
+            default=20)
     group.add_argument(
-            '--is_training',
+            '--use_image_summary',
             required=False,
-            action='store_false',
-            default=True,
+            action='store_true',
+            default=False,
+            help="""
+                add valdiation image results to tensorboard
+                """)
+    group.add_argument(
+            '--only_testing',
+            required=False,
+            action='store_true',
+            default=False,
             help="""\
                 is it training or testing?
                 """)
     group.add_argument(
-            '--resume_training',
+            '--restart_training',
+            dest='resume_training',
             required=False,
             action='store_false',
             default=True)
-
 parser = argparse.ArgumentParser()
 add_arguments(parser)
 args = parser.parse_args()
@@ -125,11 +145,13 @@ with open(val_path, 'r') as f:
 with open(train_path, 'r') as f:
     train_seq_names = [line.strip() for line in f]
 use_static_guide = args.use_static_guide 
+online_testing = args.online_testing
 test_imgs_with_guide = []
 train_imgs_with_guide = []
 baseDirImg = os.path.join(baseDir, 'JPEGImages', '480p')
 baseDirLabel = os.path.join(baseDir, 'Annotations', '480p_split')
 result_path = args.result_path #os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSMN')
+guideDirLabel = result_path if online_testing else baseDirLabel
 for name in val_seq_names:
     test_frames = sorted(os.listdir(os.path.join(baseDirImg, name)))
     label_fds = os.listdir(os.path.join(baseDirLabel, name))
@@ -141,14 +163,14 @@ for name in val_seq_names:
         if not use_static_guide:
             # use the guide image predicted from previous frame
             test_imgs_with_guide += [(os.path.join(baseDirImg, name, prev_frame), 
-                os.path.join(result_path, name, label_id, prev_frame[:-4]+'.png'),
+                os.path.join(guideDirLabel, name, label_id, prev_frame[:-4]+'.png'),
                     os.path.join(baseDirImg, name, frame)) 
                     for prev_frame, frame in zip(test_frames[1:-1], test_frames[2:])]
         else:
             # use the static visual guide image and predicted spatial guide image of previous frame
             test_imgs_with_guide += [(os.path.join(baseDirImg, name, '00000.jpg'),
                     os.path.join(baseDirLabel, name, label_id, '00000.png'),
-                    os.path.join(result_path, name, label_id, prev_frame[:-4] +'.png'),
+                    os.path.join(guideDirLabel, name, label_id, prev_frame[:-4] +'.png'),
                     os.path.join(baseDirImg, name, frame))
                     for prev_frame, frame in zip(test_frames[1:-1], test_frames[2:])]
                     
@@ -173,10 +195,11 @@ for name in train_seq_names:
                 for prev_frame, frame in zip(train_frames[:-1], train_frames[1:])]
 
 # Define Dataset
-dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide, data_aug=True, data_aug_scales=args.data_aug_scales)
+dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide, guide_image_mask=args.guide_image_mask, 
+        data_aug=True, data_aug_scales=args.data_aug_scales)
 with tf.Graph().as_default():
     with tf.device('/gpu:' + str(args.gpu_id)):
-        if args.is_training:
+        if not args.only_testing:
             max_training_iters = args.training_iters
             save_step = args.save_iters
             display_step = args.display_iters
@@ -185,12 +208,12 @@ with tf.Graph().as_default():
             osmn.train_finetune(dataset, args, args.src_model_path, None, args.learning_rate, logs_path, max_training_iters,
                              save_step, display_step, global_step, 
                              batch_size = args.batch_size,
-                             iter_mean_grad=1, resume_training=args.resume_training, ckpt_name='osmn')
+                             iter_mean_grad=1, use_image_summary = args.use_image_summary, resume_training=args.resume_training, ckpt_name='osmn')
 
 # Test the network
 with tf.Graph().as_default():
     with tf.device('/gpu:' + str(args.gpu_id)):
-        if args.is_training:
+        if not args.only_testing:
             checkpoint_path = os.path.join(logs_path, 'osmn.ckpt-'+str(max_training_iters))
         else:
             checkpoint_path = args.src_model_path    

@@ -4,8 +4,9 @@ from PIL import Image
 from sets import Set
 import numpy as np
 import cv2
-anno_dir = 'Annotations/480p/'
-save_dir = 'Annotations/480p_split/'
+data_dir = sys.argv[1]
+anno_dir = os.path.join(data_dir, 'Annotations/480p/')
+save_dir = os.path.join(data_dir, 'Annotations/480p_split/')
 fds = os.listdir(anno_dir)
 for fd in fds:
     im_list = os.listdir(anno_dir + fd)

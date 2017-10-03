@@ -260,7 +260,7 @@ def binary_seg_summary(images, predictions):
 
 def _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_path, max_training_iters, save_step, display_step,
            global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False, config=None, finetune=1,
-           test_model=True, ckpt_name="osmn"):
+           use_image_summary=True, ckpt_name="osmn"):
     """Train OSVOS
     Args:
     dataset: Reference to a Dataset object instance
@@ -338,7 +338,7 @@ def _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_pat
     merged_summary_op = tf.summary.merge_all()
 
     # Log evolution of test image
-    if test_model:
+    if use_image_summary:
         probabilities = tf.nn.sigmoid(net)
         img_summary = binary_seg_summary(input_image, probabilities)
         #img_summary = tf.summary.image("Output probabilities", probabilities, max_outputs=1)
@@ -404,7 +404,7 @@ def _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_pat
 
             # Display training status
             if step % display_step == 0:
-                if test_model:
+                if use_image_summary:
                     test_g_image, test_gb_image, test_image, _ = dataset.next_batch(batch_size, 'test')
                     curr_output = sess.run(img_summary, feed_dict={guide_image:test_g_image, gb_image:test_gb_image,
                     input_image: test_image })
@@ -428,7 +428,7 @@ def _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_pat
 
 def train_finetune(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_path, max_training_iters, save_step,
                    display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
-                   config=None, test_model=True, ckpt_name="osmn"):
+                   config=None, use_image_summary=True, ckpt_name="osmn"):
     """Finetune OSVOS
     Args:
     See _train()
@@ -436,7 +436,7 @@ def train_finetune(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, 
     """
     finetune = 1
     _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_path, max_training_iters, save_step, display_step,
-           global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, test_model,
+           global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, use_image_summary,
            ckpt_name)
 
 
