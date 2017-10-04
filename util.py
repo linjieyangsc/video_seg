@@ -87,3 +87,17 @@ def data_augmentation(im, label, new_size, data_aug_flip):
             #        new_size[0] - bbox[0],
             #       bbox[2], bbox[3])
     return im, label
+def calcIoU(gt, pred, obj_n):
+    assert(gt.shape == pred.shape)
+    ious = np.zeros((obj_n), dtype=np.float32)
+    for obj_id in range(1, obj_n+1):
+        gt_mask = gt == obj_id
+        pred_mask = pred == obj_id
+        inter = gt_mask & pred_mask
+    
+        union = gt_mask | pred_mask
+        if union.sum() == 0:
+            ious[obj_id-1] = 1
+        else:
+            ious[obj_id-1] = float(inter.sum()) / union.sum()
+    return ious

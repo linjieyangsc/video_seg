@@ -482,8 +482,8 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
             save_names = [ name.split('.')[0] + '.png' for name in image_paths]
             res = sess.run(probabilities, feed_dict={guide_image: guide_images, gb_image:gb_images, input_image: images})
             res_np = res.astype(np.float32)[:, :, :, 0] > 0.5
-            guide_images += np.array((104, 117, 123))
-            guide_images /= 255
+            #guide_images += np.array((104, 117, 123))
+            #guide_images /= 255
             for i in range(min(batch_size, dataset.get_test_size() - frame)):
                 print 'Saving ' + os.path.join(result_path, save_names[i])
                 if len(save_names[i].split('/')) > 1:
@@ -492,8 +492,8 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
                         os.makedirs(save_path)
                 scipy.misc.imsave(os.path.join(result_path, save_names[i]), res_np[i].astype(np.float32))
                 curr_score_name = save_names[i][:-4]
-                print 'Saving ' + os.path.join(result_path, curr_score_name) + '.npy'
-                np.save(os.path.join(result_path, curr_score_name), res.astype(np.float32)[i,:,:,0])
+                #print 'Saving ' + os.path.join(result_path, curr_score_name) + '.npy'
+                #np.save(os.path.join(result_path, curr_score_name), res.astype(np.float32)[i,:,:,0])
 
-                scipy.misc.imsave(os.path.join(result_path, curr_score_name + '_gb.png'), gb_images[i,:,:,0].astype(np.float32))
-                scipy.misc.imsave(os.path.join(result_path, curr_score_name + '_guide.png'),guide_images[i])
+                #scipy.misc.imsave(os.path.join(result_path, curr_score_name + '_gb.png'), gb_images[i,:,:,0].astype(np.float32))
+                #scipy.misc.imsave(os.path.join(result_path, curr_score_name + '_guide.png'),guide_images[i])

@@ -183,7 +183,7 @@ class Dataset:
                 images.append(image_data)
                 gb_images.append(gb_image)
                 # only need file name for result saving
-                image_paths.append(image_path.split('/')[-1])
+                image_paths.append('%06d.png' % i)
                 guide_images.append(guide_image_data)
             images= np.array(images)
             gb_images = np.array(gb_images)
