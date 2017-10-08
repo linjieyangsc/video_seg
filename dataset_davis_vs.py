@@ -122,7 +122,7 @@ class Dataset:
                 self.test_ptr += batch_size
             else:
                 new_ptr = (self.test_ptr + batch_size) % self.test_size
-                idx = np.hstack(self.test_idx[self.test_ptr:], self.test_idx[:new_ptr])
+                idx = np.hstack((self.test_idx[self.test_ptr:], self.test_idx[:new_ptr]))
                 self.test_ptr = new_ptr
             for i in idx:
                 sample = self.test_list[i]
