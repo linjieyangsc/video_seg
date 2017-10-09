@@ -11,12 +11,11 @@ fds = os.listdir(anno_dir)
 for fd in fds:
     im_list = os.listdir(anno_dir + fd)
     im_list = [item for item in im_list if item[-3:] == 'png']
-    colors = Set()
-    all_hash = []
+    im = np.array(Image.open(os.path.join(anno_dir + fd, '00000.png')))
+    cls_n = im.max()
     for item in im_list:
         im_path = os.path.join(anno_dir + fd, item)
         im = np.array(Image.open(im_path))
-        cls_n = im.max()
         for i in range(1, cls_n+1):
             split_dir = save_dir + fd + '/%d' % (i)
             if not os.path.exists(split_dir):
