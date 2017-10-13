@@ -25,6 +25,11 @@ def add_arguments(parser):
             required=False,
             default='models/vgg_16.ckpt')
     group.add_argument(
+            '--seg_model_path',
+            type=str,
+            required=False,
+            default='models/vgg_16.ckpt')
+    group.add_argument(
             '--result_path',
             type=str,
             required=True,
@@ -54,11 +59,17 @@ def add_arguments(parser):
             required=False,
             default=[0.8,1,1.2])
     group.add_argument(
-            '--no_guide_image_mask',
-            dest='guide_image_mask',
+            '--visual_guide_mask',
+            dest='visual_guide_mask',
             required=False,
             action='store_false',
             default=True)
+    group.add_argument(
+            '--sp_guide_random_blank',
+            required=False,
+            action='store_true',
+            default=False)
+            
     group.add_argument(
             '--batch_size',
             type=int,
@@ -126,7 +137,9 @@ val_file = os.path.join(baseDir, 'annotations/instances_val2017.json')
 
 
 # Define Dataset
-dataset = Dataset(train_file, val_file, train_path, val_path, guide_image_mask=args.guide_image_mask, data_aug=True, data_aug_scales=args.data_aug_scales)
+dataset = Dataset(train_file, val_file, train_path, val_path, 
+        visual_guide_mask=args.visual_guide_mask, sp_guide_random_blank=args.sp_guide_random_blank,
+        data_aug=True, data_aug_scales=args.data_aug_scales)
 # Train parameters
 logs_path = args.model_save_path
 max_training_iters = args.training_iters
@@ -135,6 +148,7 @@ save_step = args.save_iters
 display_step = args.display_iters
 batch_size = args.batch_size
 src_model_path = args.src_model_path
+seg_model_path = args.seg_model_path
 resume_training = args.resume_training
 result_path = args.result_path
 use_image_summary = args.use_image_summary
@@ -142,7 +156,7 @@ if not args.only_testing:
     with tf.Graph().as_default():
         with tf.device('/gpu:' + str(args.gpu_id)):
             global_step = tf.Variable(0, name='global_step', trainable=False)
-            osmn.train_finetune(dataset, args, src_model_path, src_model_path, learning_rate, logs_path, max_training_iters,
+            osmn.train_finetune(dataset, args, src_model_path, seg_model_path, learning_rate, logs_path, max_training_iters,
                                  save_step, display_step, global_step, batch_size = batch_size, 
                                  iter_mean_grad=1, use_image_summary=use_image_summary, resume_training=resume_training, ckpt_name='osmn')
 

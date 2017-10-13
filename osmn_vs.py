@@ -61,7 +61,7 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
     batch_size = inputs[1].get_shape().as_list()[0]
     mod_last_conv = model_params.mod_last_conv
     sp_late_fusion = model_params.sp_late_fusion
-    n_modulator_param = 512 * 6 + mod_last_conv * 64
+    n_modulator_param = 512 * 6 + 256 * 3 + mod_last_conv * 64
 
     with tf.variable_scope(scope, [inputs]) as sc:
         end_points_collection = sc.name + '_end_points'
@@ -109,7 +109,9 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                     conv5_att = slim.conv2d(ds_mask, 16, [3,3], scope='conv5')
                 else:
 
-                    ds_mask = slim.avg_pool2d(inputs[1], [8, 8], stride=8, scope='pool1')
+                    ds_mask = slim.avg_pool2d(inputs[1], [4, 4], stride=4, scope='pool1')
+                    conv3_att = slim.conv2d(ds_mask, 256 * 3, [1,1], scope='conv3')
+                    ds_mask = slim.avg_pool2d(ds_mask, [2, 2], scope = 'pool3')
                     conv4_att = slim.conv2d(ds_mask, 512 * 3, [1,1], scope='conv4')
                     ds_mask = slim.avg_pool2d(ds_mask, [2, 2], scope = 'pool4')
                     conv5_att = slim.conv2d(ds_mask, 512 * 3, [1,1], scope='conv5')
@@ -122,10 +124,20 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                 net = slim.repeat(inputs[2], 2, slim.conv2d, 64, [3, 3], scope='conv1')
                 net = slim.max_pool2d(net, [2, 2], scope='pool1')
                 net_2 = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='conv2')
-                net = slim.max_pool2d(net_2, [2, 2], scope='pool2')
-                net_3 = slim.repeat(net, 3, slim.conv2d, 256, [3, 3], scope='conv3')
-                net_4 = slim.max_pool2d(net_3, [2, 2], scope='pool3')
+                net_3 = slim.max_pool2d(net_2, [2, 2], scope='pool2')
+                #net_3 = slim.repeat(net, 3, slim.conv2d, 256, [3, 3], scope='conv3')
                 prev_mod_id = 0
+                prev_sp_id = 0
+                for i in range(3):
+                    net_3 = slim.conv2d(net_3, 256, [3,3], scope='conv3/conv3_{}'.format(i+1))
+                    m_params = tf.slice(modulator_params, [0,prev_mod_id], [batch_size,256], name = 'm_param3')
+                    net_3 = conditional_normalization(net_3, m_params, scope='conv3/conv3_{}'.format(i+1))
+                    prev_mod_id += 256
+                    if not sp_late_fusion:
+                        sp_params = tf.slice(conv3_att, [0, 0, 0, prev_sp_id], [batch_size, -1, -1 , 256], name = 'm_sp_param3')
+                        net_3 = tf.add(net_3, sp_params)
+                        prev_sp_id += 256
+                net_4 = slim.max_pool2d(net_3, [2, 2], scope='pool3')
                 prev_sp_id = 0
                 for i in range(3):
                     net_4 = slim.conv2d(net_4, 512, [3,3], scope='conv4/conv4_{}'.format(i+1))

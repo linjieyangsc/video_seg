@@ -12,8 +12,8 @@ from util import to_bgr, mask_image, get_mask_bbox, get_gb_image, data_augmentat
 sys.path.append('../coco/PythonAPI')
 from pycocotools.coco import COCO
 class Dataset:
-    def __init__(self, train_anno_file, test_anno_file, train_image_path, test_image_path, guide_image_mask=True, 
-            data_aug=False, data_aug_scales=[0.8, 1.0, 1.2]):
+    def __init__(self, train_anno_file, test_anno_file, train_image_path, test_image_path, visual_guide_mask=True, 
+            data_aug=False, sp_guide_random_blank=True, data_aug_scales=[0.8, 1.0, 1.2]):
         """Initialize the Dataset object
         Args:
         train_anno_file: json file for training data
@@ -30,7 +30,8 @@ class Dataset:
         random.seed(1234)
         self.train_image_path = train_image_path
         self.test_image_path = test_image_path
-        self.guide_image_mask = guide_image_mask 
+        self.visual_guide_mask = visual_guide_mask
+        self.sp_guide_random_blank = sp_guide_random_blank
         self.train_data = COCO(train_anno_file)
         self.test_data = COCO(test_anno_file)
         if os.path.exists('cache/train_annos.pkl'):
@@ -119,7 +120,10 @@ class Dataset:
                 label_data = np.array(label, dtype=np.float32)
                 guide_image_data = np.array(guide_image, dtype=np.float32)
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
-                gb_image = get_gb_image(label_data)
+                if self.sp_guide_random_blank:
+                    gb_image = get_gb_image(label_data)
+                else:
+                    gb_image = get_gb_image(label_data,blank_prob=0)
                 #print 'gb image shape', gb_image.shape
                 #scipy.misc.imsave(os.path.join('test', image_path.split('/')[-1]), gb_image)
                 #scipy.misc.imsave(os.path.join('test', image_path.split('/')[-1][:-4]+'_guide.jpg'), label_data)
@@ -128,7 +132,7 @@ class Dataset:
                 image_data -= self.mean_value
                 guide_image_data -= self.mean_value
                 # masking
-                if self.guide_image_mask:
+                if self.visual_guide_mask:
                     guide_image_data = mask_image(guide_image_data, guide_label_data)
                 images.append(image_data)
                 labels.append(label_data)
@@ -175,7 +179,7 @@ class Dataset:
                 gb_image = get_gb_image(label_data, center_perturb=0, std_perturb=0, blank_prob=0) 
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
                 # masking
-                if self.guide_image_mask:
+                if self.visual_guide_mask:
                     guide_image_data = mask_image(guide_image_data, guide_label_data)
                 images.append(image_data)
                 gb_images.append(gb_image)
