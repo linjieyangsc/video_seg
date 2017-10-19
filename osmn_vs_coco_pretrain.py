@@ -48,18 +48,32 @@ def add_arguments(parser):
             action='store_true',
             default=False)
     group.add_argument(
+            '--orig_gb',
+            required=False,
+            action='store_true',
+            default=False)
+    group.add_argument(
             '--sp_late_fusion',
             required=False,
             action='store_true',
             default=False)
+    group.add_argument(
+            '--use_visual_modulator',
+            action = 'store_true',
+            default=False)
     group = parser.add_argument_group(title='Data Argument')
     group.add_argument(
+            '--input_size',
+            type=int,
+            required = False,
+            default=400)
+    group.add_argument(
             '--data_aug_scales',
-            type=list,
+            nargs='+', type=float,
             required=False,
             default=[0.8,1,1.2])
     group.add_argument(
-            '--visual_guide_mask',
+            '--no_visual_guide_mask',
             dest='visual_guide_mask',
             required=False,
             action='store_false',
@@ -134,12 +148,13 @@ train_path = os.path.join(baseDir, 'train2017/{:012d}.jpg')
 val_path = os.path.join(baseDir, 'val2017/{:012d}.jpg')
 train_file = os.path.join(baseDir, 'annotations/instances_train2017.json')
 val_file = os.path.join(baseDir, 'annotations/instances_val2017.json')
-
+print args
+sys.stdout.flush()
 
 # Define Dataset
 dataset = Dataset(train_file, val_file, train_path, val_path, 
         visual_guide_mask=args.visual_guide_mask, sp_guide_random_blank=args.sp_guide_random_blank,
-        data_aug=True, data_aug_scales=args.data_aug_scales)
+        data_aug=True, input_size=args.input_size, data_aug_scales=args.data_aug_scales)
 # Train parameters
 logs_path = args.model_save_path
 max_training_iters = args.training_iters

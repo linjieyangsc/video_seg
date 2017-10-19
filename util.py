@@ -43,7 +43,9 @@ def compute_robust_moments(binary_image, isotropic=False):
 def get_gb_image(label, center_perturb = 0.2, std_perturb=0.4, blank_prob=0.2):
     if not np.any(label) or random.random() < blank_prob:
         #return a blank gb image
-        return np.zeros((label.shape))
+        center = np.array([label.shape[1]/2, label.shape[0]/2])
+        std = np.array([label.shape[1]/2, label.shape[0]/2])
+        return np.zeros((label.shape)), center, std
     center, std = compute_robust_moments(label)
     center_p_ratio = np.random.uniform(-center_perturb, center_perturb, 2)
     center_p = center_p_ratio * std + center
@@ -58,7 +60,15 @@ def get_gb_image(label, center_perturb = 0.2, std_perturb=0.4, blank_prob=0.2):
     D = np.sum((coords - center_p) ** 2 * normalizer, axis=2)
     D = np.exp(-D)
     D = np.clip(D, 0, 1)
-    return D
+    return D, center_p, std_p
+
+def adaptive_crop_box(im_shape, center_p, std_p, ext_ratio = 5):
+    
+    p1 = np.array(center_p - std_p * ext_ratio, dtype=np.int32)
+    p1 = np.maximum(0, p1)
+    p2 = np.array(center_p + std_p * ext_ratio, dtype=np.int32)
+    p2 = np.minimum(im_shape[::-1], p2)
+    return (p1[0], p1[1], p2[0], p2[1])
 
 def to_bgr(image):
     if len(image.shape) < 3:

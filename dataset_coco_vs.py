@@ -13,7 +13,7 @@ sys.path.append('../coco/PythonAPI')
 from pycocotools.coco import COCO
 class Dataset:
     def __init__(self, train_anno_file, test_anno_file, train_image_path, test_image_path, visual_guide_mask=True, 
-            data_aug=False, sp_guide_random_blank=True, data_aug_scales=[0.8, 1.0, 1.2]):
+            input_size = 400, data_aug=False, sp_guide_random_blank=True, data_aug_scales=[0.8, 1.0, 1.2]):
         """Initialize the Dataset object
         Args:
         train_anno_file: json file for training data
@@ -51,7 +51,7 @@ class Dataset:
         self.test_size = len(self.test_annos)
         self.train_idx = np.arange(self.train_size) 
         self.test_idx = np.arange(self.test_size)
-        self.size = (400,400)
+        self.size = (input_size,input_size)
         self.mean_value = np.array((104, 117, 123))
         self.guide_size = (224,224)
         np.random.shuffle(self.train_idx)
@@ -121,9 +121,9 @@ class Dataset:
                 guide_image_data = np.array(guide_image, dtype=np.float32)
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
                 if self.sp_guide_random_blank:
-                    gb_image = get_gb_image(label_data)
+                    gb_image, _, _ = get_gb_image(label_data)
                 else:
-                    gb_image = get_gb_image(label_data,blank_prob=0)
+                    gb_image, _, _ = get_gb_image(label_data,blank_prob=0)
                 #print 'gb image shape', gb_image.shape
                 #scipy.misc.imsave(os.path.join('test', image_path.split('/')[-1]), gb_image)
                 #scipy.misc.imsave(os.path.join('test', image_path.split('/')[-1][:-4]+'_guide.jpg'), label_data)
@@ -176,7 +176,7 @@ class Dataset:
                 image_data -= self.mean_value
                 guide_image_data -= self.mean_value
                 label_data = np.array(label, dtype=np.uint8)
-                gb_image = get_gb_image(label_data, center_perturb=0, std_perturb=0, blank_prob=0) 
+                gb_image, _, _ = get_gb_image(label_data, center_perturb=0, std_perturb=0, blank_prob=0) 
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
                 # masking
                 if self.visual_guide_mask:
@@ -204,3 +204,6 @@ class Dataset:
 
     def train_img_size(self):
         return self.size
+    def reset_idx(self):
+        self.train_ptr = 0
+        self.test_ptr = 0

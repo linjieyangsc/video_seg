@@ -34,9 +34,36 @@ def add_arguments(parser):
             type=str,
             required=False,
             default='')
-
-
+    group.add_argument(
+            '--data_version',
+            type=int,
+            required=False,
+            default=2017,
+            help="""
+                which DAVIS version to use? 2016 or 2017
+                """)
     group = parser.add_argument_group(title='Model Arguments')
+    group.add_argument(
+            '--mod_last_conv',
+            required=False,
+            action='store_true',
+            default=False)
+    group.add_argument(
+            '--orig_gb',
+            required=False,
+            action='store_true',
+            default=False)
+    group.add_argument(
+            '--sp_late_fusion',
+            required=False,
+            action='store_true',
+            default=False)
+    group.add_argument(
+            '--use_visual_modulator',
+            required=False,
+            action='store_true',
+            default=False)
+    group = parser.add_argument_group(title='Data Argument')
     group.add_argument(
             '--use_prev_guide',
             dest='use_static_guide',
@@ -57,17 +84,6 @@ def add_arguments(parser):
                 default to offline, should be set to offline when there is image summaries
                 """)
     group.add_argument(
-            '--mod_last_conv',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--sp_late_fusion',
-            required=False,
-            action='store_true',
-            default=False)
-    group = parser.add_argument_group(title='Data Argument')
-    group.add_argument(
             '--data_aug_scales',
             type=list,
             required=False,
@@ -79,11 +95,20 @@ def add_arguments(parser):
             action='store_false',
             default=True)
     group.add_argument(
+            '--sp_guide_random_blank',
+            required=False,
+            action='store_true',
+            default=False)
+    group.add_argument(
             '--batch_size',
             type=int,
             required=False,
             default=4)
-
+    group.add_argument(
+            '--adaptive_crop_testing',
+            action='store_true',
+            required=False,
+            default=False)
     group = parser.add_argument_group(title='Running Arguments')
     group.add_argument(
             '--gpu_id',
@@ -137,9 +162,11 @@ add_arguments(parser)
 args = parser.parse_args()
 print args
 baseDir = args.data_path
+data_version =args.data_version
+
 # User defined parameters
-train_path = os.path.join(baseDir, 'ImageSets/2017/train.txt')
-val_path = os.path.join(baseDir, 'ImageSets/2017/val.txt')
+train_path = os.path.join(baseDir, 'ImageSets/%d/train.txt' % data_version)
+val_path = os.path.join(baseDir, 'ImageSets/%d/val.txt' % data_version)
 with open(val_path, 'r') as f:
     val_seq_names = [line.strip() for line in f]
 with open(train_path, 'r') as f:
@@ -149,12 +176,14 @@ online_testing = args.online_testing
 test_imgs_with_guide = []
 train_imgs_with_guide = []
 baseDirImg = os.path.join(baseDir, 'JPEGImages', '480p')
-baseDirLabel = os.path.join(baseDir, 'Annotations', '480p_split')
+label_fd = '480p_split' if data_version==2017 else '480p_all'
+baseDirLabel = os.path.join(baseDir, 'Annotations', label_fd)
 result_path = args.result_path #os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSMN')
 guideDirLabel = result_path if online_testing else baseDirLabel
 for name in val_seq_names:
     test_frames = sorted(os.listdir(os.path.join(baseDirImg, name)))
-    label_fds = os.listdir(os.path.join(baseDirLabel, name))
+    label_fds = os.listdir(os.path.join(baseDirLabel, name)) if data_version == 2017 else \
+            ['']
     for label_id in label_fds:
         test_imgs_with_guide += [(os.path.join(baseDirImg, name, '00000.jpg'), 
                 os.path.join(baseDirLabel, name, label_id, '00000.png'),
@@ -176,7 +205,8 @@ for name in val_seq_names:
                     
 for name in train_seq_names:
     train_frames = sorted(os.listdir(os.path.join(baseDirImg, name)))
-    label_fds = os.listdir(os.path.join(baseDirLabel, name))
+    label_fds = os.listdir(os.path.join(baseDirLabel, name)) if data_version == 2017 else \
+            [os.path.join(baseDirLabel, name)]
     for label_id in label_fds:
         if not use_static_guide:
             # use the ground truth guide image from previous frame
@@ -195,7 +225,13 @@ for name in train_seq_names:
                 for prev_frame, frame in zip(train_frames[:-1], train_frames[1:])]
 
 # Define Dataset
-dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide, guide_image_mask=args.guide_image_mask, 
+multiclass = (data_version == 2017)
+adaptive_crop_testing = args.adaptive_crop_testing
+dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide, 
+        multiclass = multiclass,
+        adaptive_crop_testing = adaptive_crop_testing,
+        sp_guide_random_blank=args.sp_guide_random_blank, 
+        guide_image_mask=args.guide_image_mask, 
         data_aug=True, data_aug_scales=args.data_aug_scales)
 with tf.Graph().as_default():
     with tf.device('/gpu:' + str(args.gpu_id)):

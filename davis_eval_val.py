@@ -7,7 +7,8 @@ from util import calcIoU
 gt_path = '/raid/ljyang/data/DAVIS/Annotations/480p'
 pred_path = sys.argv[1] #'DAVIS/Results/Segmentations/480p/OSVOS'
 sav_path = 'DAVIS/Visualize'
-listFile = '/raid/ljyang/data/DAVIS/ImageSets/2017/val.txt'
+dataset_version = sys.argv[2]
+listFile = '/raid/ljyang/data/DAVIS/ImageSets/%s/val.txt' % dataset_version
 with open(listFile, 'r') as f:
     fds = [line.strip() for line in f]
 im_num = 0
@@ -20,26 +21,31 @@ for i, fd in enumerate(fds):
     im_list = [name for name in file_list if len(name) > 4 and name[-4:]=='.png']
     im_list = sorted(im_list)
     pred_list = os.listdir(os.path.join(pred_path, fd))
-    sub_fds = [name for name in pred_list if len(name) < 4]
-    sub_fds = sorted(sub_fds)
-    print sub_fds
-    for sub_fd in sub_fds:
-        subfd_names.append(fd+'/'+sub_fd)
+    if dataset_version == '2017':
+        sub_fds = [name for name in pred_list if len(name) < 4]
+        sub_fds = sorted(sub_fds)
+        print sub_fds
+        for sub_fd in sub_fds:
+            subfd_names.append(fd+'/'+sub_fd)
     iou_seq = []
     for im_name in im_list[1:-1]:
         iou_im = 0
         scores = []
         label_gt = np.array(Image.open(os.path.join(gt_path, fd, im_name)))
-        for j, sub_fd in enumerate(sub_fds):
+        if dataset_version == '2017':
+            for j, sub_fd in enumerate(sub_fds):
 
-            score = np.load(os.path.join(pred_path, fd, sub_fd, im_name[:-4] + '.npy'))
-            scores.append(score)
-        im_size = scores[0].shape
-        bg_score = np.ones(im_size) * 0.5
-        scores = [bg_score] + scores
-        score_all = np.stack(tuple(scores), axis = -1)
-        class_n = score_all.shape[2] - 1
-        label_pred = score_all.argmax(axis=2)
+                score = np.load(os.path.join(pred_path, fd, sub_fd, im_name[:-4] + '.npy'))
+                scores.append(score)
+            im_size = scores[0].shape
+            bg_score = np.ones(im_size) * 0.5
+            scores = [bg_score] + scores
+            score_all = np.stack(tuple(scores), axis = -1)
+            class_n = score_all.shape[2] - 1
+            label_pred = score_all.argmax(axis=2)
+        else:
+            class_n = 1
+            label_pred = np.array(Image.open(os.path.join(pred_path,fd, im_name))) > 0 
         label_pred = np.array(Image.fromarray(label_pred.astype(np.uint8)).resize((label_gt.shape[1], label_gt.shape[0]), 
             Image.NEAREST))
         #cv2.resize(label_pred, label_gt.shape, label_pred, 0, 0, cv2.INTER_NEAREST)
