@@ -4,16 +4,17 @@ The COCO dataset wrapper for One-Shot Mudulation Network
 from PIL import Image
 import os
 import numpy as np
+from scipy import ndimage
 import sys
 import random
 import cPickle
 import scipy
-from util import to_bgr, mask_image, get_mask_bbox, get_gb_image, data_augmentation
+from util import to_bgr, mask_image, get_mask_bbox, get_gb_image, data_augmentation, perturb_mask, get_dilate_structure
 sys.path.append('../coco/PythonAPI')
 from pycocotools.coco import COCO
 class Dataset:
     def __init__(self, train_anno_file, test_anno_file, train_image_path, test_image_path, visual_guide_mask=True, 
-            input_size = 400, data_aug=False, sp_guide_random_blank=True, data_aug_scales=[0.8, 1.0, 1.2]):
+            use_original_mask = False, input_size = 400, data_aug=False, sp_guide_random_blank=True, data_aug_scales=[0.8, 1.0, 1.2]):
         """Initialize the Dataset object
         Args:
         train_anno_file: json file for training data
@@ -32,6 +33,7 @@ class Dataset:
         self.test_image_path = test_image_path
         self.visual_guide_mask = visual_guide_mask
         self.sp_guide_random_blank = sp_guide_random_blank
+        self.use_original_mask = use_original_mask
         self.train_data = COCO(train_anno_file)
         self.test_data = COCO(test_anno_file)
         if os.path.exists('cache/train_annos.pkl'):
@@ -44,7 +46,10 @@ class Dataset:
             cPickle.dump(self.train_annos, open('cache/train_annos.pkl', 'wb'), cPickle.HIGHEST_PROTOCOL)
             cPickle.dump(self.test_annos, open('cache/val_annos.pkl', 'wb'), cPickle.HIGHEST_PROTOCOL)
         # Init parameters
-
+        #self.dilate_structure = ndimage.iterate_structure(ndimage.generate_binary_structure(2, 2), 5).astype(int)
+        self.dilate_structure = get_dilate_structure(5)
+        print self.dilate_structure
+        sys.stdout.flush()
         self.train_ptr = 0
         self.test_ptr = 0
         self.train_size = len(self.train_annos)
@@ -120,10 +125,14 @@ class Dataset:
                 label_data = np.array(label, dtype=np.float32)
                 guide_image_data = np.array(guide_image, dtype=np.float32)
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
-                if self.sp_guide_random_blank:
-                    gb_image, _, _ = get_gb_image(label_data)
+                if self.use_original_mask:
+                    gb_image = perturb_mask(label_data)
+                    gb_image = ndimage.morphology.binary_dilation(gb_image, 
+                            structure=self.dilate_structure) * 255
+                elif self.sp_guide_random_blank:
+                    gb_image, _, _ = get_gb_image(label_data, blank_prob=0.2)
                 else:
-                    gb_image, _, _ = get_gb_image(label_data,blank_prob=0)
+                    gb_image, _, _ = get_gb_image(label_data)
                 #print 'gb image shape', gb_image.shape
                 #scipy.misc.imsave(os.path.join('test', image_path.split('/')[-1]), gb_image)
                 #scipy.misc.imsave(os.path.join('test', image_path.split('/')[-1][:-4]+'_guide.jpg'), label_data)
@@ -176,7 +185,11 @@ class Dataset:
                 image_data -= self.mean_value
                 guide_image_data -= self.mean_value
                 label_data = np.array(label, dtype=np.uint8)
-                gb_image, _, _ = get_gb_image(label_data, center_perturb=0, std_perturb=0, blank_prob=0) 
+                if self.use_original_mask:
+                    gb_image = ndimage.morphology.binary_dilation(label_data, 
+                            structure=self.dilate_structure) * 255
+                else:
+                    gb_image, _, _ = get_gb_image(label_data, center_perturb=0, std_perturb=0, blank_prob=0) 
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
                 # masking
                 if self.visual_guide_mask:

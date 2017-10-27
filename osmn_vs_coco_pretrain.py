@@ -48,6 +48,16 @@ def add_arguments(parser):
             action='store_true',
             default=False)
     group.add_argument(
+            '--mod_early_conv',
+            required=False,
+            action='store_true',
+            default=False)
+    group.add_argument(
+            '--mod_middle_conv',
+            required=False,
+            action = 'store_true',
+            default=False)
+    group.add_argument(
             '--orig_gb',
             required=False,
             action='store_true',
@@ -58,7 +68,33 @@ def add_arguments(parser):
             action='store_true',
             default=False)
     group.add_argument(
-            '--use_visual_modulator',
+            '--spatial_mod_use_bn',
+            required=False,
+            action='store_true',
+            default=False)
+    ## masktrack params
+    group.add_argument(
+            '--aligned_size',
+            type=list,
+            required=False,
+            default=None)
+    group.add_argument(
+            '--masktrack',
+            required=False,
+            action='store_true',
+            default=False)
+    group.add_argument(
+            '--train_seg',
+            required=False,
+            action='store_true',
+            default=False)
+    group.add_argument(
+            '--no_visual_modulator',
+            dest='use_visual_modulator',
+            action = 'store_false',
+            default=True)
+    group.add_argument(
+            '--loss_normalize',
             action = 'store_true',
             default=False)
     group = parser.add_argument_group(title='Data Argument')
@@ -66,12 +102,12 @@ def add_arguments(parser):
             '--input_size',
             type=int,
             required = False,
-            default=400)
+            default=600)
     group.add_argument(
             '--data_aug_scales',
             nargs='+', type=float,
             required=False,
-            default=[0.8,1,1.2])
+            default=[1])
     group.add_argument(
             '--no_visual_guide_mask',
             dest='visual_guide_mask',
@@ -85,11 +121,24 @@ def add_arguments(parser):
             default=False)
             
     group.add_argument(
+            '--adaptive_crop_testing',
+            required=False,
+            action='store_true',
+            default=False,
+            help="""
+                use adaptive croppping around spatial guide to do testing
+                """)
+    group.add_argument(
             '--batch_size',
             type=int,
             required=False,
             default=6)
 
+    group.add_argument(
+            '--save_score',
+            required=False,
+            action='store_true',
+            default=False)
     group = parser.add_argument_group(title='Running Arguments')
     group.add_argument(
             '--gpu_id',
@@ -139,6 +188,8 @@ def add_arguments(parser):
             action='store_false',
             default=True)
 
+print " ".join(sys.argv[:])
+
 parser = argparse.ArgumentParser()
 add_arguments(parser)
 args = parser.parse_args()
@@ -150,11 +201,12 @@ train_file = os.path.join(baseDir, 'annotations/instances_train2017.json')
 val_file = os.path.join(baseDir, 'annotations/instances_val2017.json')
 print args
 sys.stdout.flush()
-
+if args.masktrack:
+    import masktrack as osmn
 # Define Dataset
 dataset = Dataset(train_file, val_file, train_path, val_path, 
         visual_guide_mask=args.visual_guide_mask, sp_guide_random_blank=args.sp_guide_random_blank,
-        data_aug=True, input_size=args.input_size, data_aug_scales=args.data_aug_scales)
+        use_original_mask = args.masktrack, data_aug=True, input_size=args.input_size, data_aug_scales=args.data_aug_scales)
 # Train parameters
 logs_path = args.model_save_path
 max_training_iters = args.training_iters
@@ -167,12 +219,17 @@ seg_model_path = args.seg_model_path
 resume_training = args.resume_training
 result_path = args.result_path
 use_image_summary = args.use_image_summary
+## default config
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+config.allow_soft_placement = True
+config.gpu_options.per_process_gpu_memory_fraction = 0.9
 if not args.only_testing:
     with tf.Graph().as_default():
         with tf.device('/gpu:' + str(args.gpu_id)):
             global_step = tf.Variable(0, name='global_step', trainable=False)
             osmn.train_finetune(dataset, args, src_model_path, seg_model_path, learning_rate, logs_path, max_training_iters,
-                                 save_step, display_step, global_step, batch_size = batch_size, 
+                                 save_step, display_step, global_step, batch_size = batch_size, config=config, 
                                  iter_mean_grad=1, use_image_summary=use_image_summary, resume_training=resume_training, ckpt_name='osmn')
 
 # Test the network
@@ -182,4 +239,4 @@ with tf.Graph().as_default():
             checkpoint_path = os.path.join(logs_path, 'osmn.ckpt-'+str(max_training_iters))
         else:
             checkpoint_path = src_model_path
-        osmn.test(dataset, args, checkpoint_path, result_path, batch_size = batch_size)
+        osmn.test(dataset, args, checkpoint_path, result_path, config=config, batch_size = batch_size)

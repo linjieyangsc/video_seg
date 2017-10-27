@@ -7,11 +7,13 @@ import os
 import numpy as np
 import sys
 import random
-from util import get_mask_bbox, get_gb_image, to_bgr, mask_image, adaptive_crop_box
+from util import get_mask_bbox, get_gb_image, to_bgr, mask_image, adaptive_crop_box, get_dilate_structure, perturb_mask
 class Dataset:
     def __init__(self, train_list, test_list, 
             sp_guide_random_blank=False, guide_image_mask=True, 
             adaptive_crop_testing = False,
+            use_original_mask = False,
+            im_size = (854, 480),
             data_aug=False, multiclass=True, data_aug_scales=[0.5, 0.8, 1]):
         """Initialize the Dataset object
         Args:
@@ -27,6 +29,8 @@ class Dataset:
         self.guide_image_mask = guide_image_mask
         self.multiclass = multiclass
         self.adaptive_crop_testing = adaptive_crop_testing
+        self.use_original_mask = False
+        self.use_visual_guide = False
         # Init parameters
         self.train_list = train_list
         self.test_list = test_list
@@ -37,10 +41,13 @@ class Dataset:
         self.train_idx = np.arange(self.train_size)
         self.test_idx = np.arange(self.test_size)
         self.sp_guide_random_blank=sp_guide_random_blank
+        self.use_original_mask = use_original_mask
+        self.blank_prob = 0.2
+        self.dilate_structure = get_dilate_structure(5)
         np.random.shuffle(self.train_idx)
-        self.size = (854, 480)
+        self.size = im_size
         self.crop_size = 480
-        self.mean_value = np.array((104, 117, 123))
+        self.mean_value = np.array((104.01, 116.67, 122.68))
         self.guide_size = (224, 224)
 
     def next_batch(self, batch_size, phase):
@@ -93,9 +100,13 @@ class Dataset:
                             self.data_augmentation(image, label, ref_label, new_size)
                 bbox = get_mask_bbox(np.array(guide_label))
                 if self.sp_guide_random_blank:
+                    gb_image, _, _ = get_gb_image(np.array(ref_label_new), blank_prob=self.blank_prob)
+                elif not self.use_original_mask:
                     gb_image, _, _ = get_gb_image(np.array(ref_label_new))
                 else:
-                    gb_image, _, _ = get_gb_image(np.array(ref_label_new), blank_prob=0)
+                    gb_image = perturb_mask(np.array(ref_label_new))
+                    gb_image = ndimage.morphology.binary_dilation(gb_image, 
+                            structure=self.dilate_structure) * 255
                 guide_image = guide_image.crop(bbox)
                 guide_label = guide_label.crop(bbox)
                 guide_image = guide_image.resize(self.guide_size, Image.BILINEAR)
@@ -160,6 +171,9 @@ class Dataset:
                 ref_label_new = ref_label.resize(self.size, Image.NEAREST)
                 gb_image, center, std = get_gb_image(np.array(ref_label_new), center_perturb=0, std_perturb=0,
                         blank_prob=0)
+                if self.use_original_mask:
+                    gb_image = ndimage.morphology.binary_dilation(np.array(ref_label_new), 
+                            structure=self.dilate_structure) * 255
                 if self.adaptive_crop_testing:
                     crop_box = adaptive_crop_box(gb_image.shape, center, std)
                     crop_w, crop_h = crop_box[2] - crop_box[0], crop_box[3] - crop_box[1]
@@ -179,7 +193,6 @@ class Dataset:
                     print 'gb resize shape', gb_image.shape
                     image = image.resize(new_size, Image.BILINEAR)
                     #gb_image = np.array(gb_image, dtype=np.float32)
-                    print 'range of gb_image after crop', np.amax(gb_image), np.amin(gb_image)
                 else:
 
                     image = image.resize(self.size, Image.BILINEAR)

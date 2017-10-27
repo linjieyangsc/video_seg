@@ -8,12 +8,16 @@ gt_path = '/raid/ljyang/data/DAVIS/Annotations/480p'
 pred_path = sys.argv[1] #'DAVIS/Results/Segmentations/480p/OSVOS'
 sav_path = 'DAVIS/Visualize'
 dataset_version = sys.argv[2]
-listFile = '/raid/ljyang/data/DAVIS/ImageSets/%s/val.txt' % dataset_version
+dataset_split = sys.argv[3]
+listFile = '/raid/ljyang/data/DAVIS/ImageSets/%s/%s.txt' % (dataset_version, dataset_split)
+
 with open(listFile, 'r') as f:
     fds = [line.strip() for line in f]
 im_num = 0
-iou =[] 
+iou =[]
+iou_over_sample = 0
 seq_n = 0
+sample_n = 0
 subfd_names = []
 for i, fd in enumerate(fds):
     print fd
@@ -45,6 +49,7 @@ for i, fd in enumerate(fds):
             label_pred = score_all.argmax(axis=2)
         else:
             class_n = 1
+            label_gt = label_gt > 0
             label_pred = np.array(Image.open(os.path.join(pred_path,fd, im_name))) > 0 
         label_pred = np.array(Image.fromarray(label_pred.astype(np.uint8)).resize((label_gt.shape[1], label_gt.shape[0]), 
             Image.NEAREST))
@@ -52,10 +57,12 @@ for i, fd in enumerate(fds):
         iou_seq.append(calcIoU(label_gt, label_pred, class_n))
     iou_seq = np.stack(iou_seq, axis=1)
     print iou_seq.mean(axis=1)
-    iou.extend(iou_seq.mean(axis=1).tolist())
+    iou_over_sample += iou_seq.sum()
+    sample_n += iou_seq.size
+    iou.extend(iou_seq.mean(axis=1).tolist())#flatten and append
 iou = np.array(iou)
 print "iou:", iou.mean()
-
+print 'iou mean over samples:', iou_over_sample / sample_n
 with open("iou.txt", "w") as f:
     for fd, num in zip(subfd_names, iou):
         f.write("%s\t%f\n" % (fd, num))

@@ -4,12 +4,11 @@ One-Shot Modulation Netowrk
 """
 import os
 import sys
+import scipy
 from PIL import Image
 import numpy as np
-import tensorflow as tf
-slim = tf.contrib.slim
 import argparse
-import osmn_vs as osmn
+import caffe
 from dataset_davis_vs import Dataset
 
 def add_arguments(parser):
@@ -22,22 +21,17 @@ def add_arguments(parser):
     group.add_argument(
             '--src_model_path',
             type=str,
-            required=False,
+            required=True,
             default='')
     group.add_argument(
-            '--seg_model_path',
+            '--model_proto_path',
             type=str,
-            required=False,
+            required=True,
             default='')
     group.add_argument(
             '--result_path',
             type=str,
             required=True,
-            default='')
-    group.add_argument(
-            '--model_save_path',
-            type=str,
-            required=False,
             default='')
     group.add_argument(
             '--data_version',
@@ -53,73 +47,16 @@ def add_arguments(parser):
             required=False,
             default='val'
             )
-    group = parser.add_argument_group(title='Model Arguments')
-    group.add_argument(
-            '--mod_last_conv',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--mod_early_conv',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--mod_middle_conv',
-            required=False,
-            action = 'store_true',
-            default=False)
-    group.add_argument(
-            '--orig_gb',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--sp_late_fusion',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--spatial_mod_use_bn',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--no_visual_modulator',
-            required=False,
-            dest='use_visual_modulator',
-            action='store_false',
-            default=True)
-    group.add_argument(
-            '--loss_normalize',
-            required=False,
-            action='store_true',
-            default=False)
-    ## masktrack params
-    group.add_argument(
-            '--aligned_size',
-            type=list,
-            required=False,
-            default=[865, 481])
-    group.add_argument(
-            '--train_seg',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--masktrack',
-            required=False,
-            action='store_true',
-            default=False)
     group = parser.add_argument_group(title='Data Argument')
     group.add_argument(
-            '--use_prev_guide',
-            dest='use_static_guide',
+            '--online_testing',
             required=False,
-            action='store_false',
-            default=True,
+            action='store_true',
+            default=False,
             help="""
-                only use the first frame as visual guide or use the previous frame as visual guide
+                offline testing: use ground truth mask from previous frame as spatial guide
+                online testing: use predicted mask from previous frame as spatial guide
+                default to offline, should be set to offline when there is image summaries
                 """)
     group.add_argument(
             '--adaptive_crop_testing',
@@ -130,80 +67,22 @@ def add_arguments(parser):
                 use adaptive croppping around spatial guide to do testing
                 """)
     group.add_argument(
-            '--data_aug_scales',
-            type=list,
-            required=False,
-            default=[0.5,0.8,1])
-    group.add_argument(
             '--no_guide_image_mask',
             dest='guide_image_mask',
             required=False,
             action='store_false',
             default=True)
     group.add_argument(
-            '--sp_guide_random_blank',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
             '--batch_size',
             type=int,
             required=False,
             default=4)
-    group.add_argument(
-            '--save_score',
-            required=False,
-            action='store_true',
-            default=False)
     group = parser.add_argument_group(title='Running Arguments')
     group.add_argument(
             '--gpu_id',
             type=int,
             required=False,
             default=0)
-    group.add_argument(
-            '--training_iters',
-            type=int,
-            required=False,
-            default=10000)
-    group.add_argument(
-            '--save_iters',
-            type=int,
-            required=False,
-            default=1000)
-    group.add_argument(
-            '--learning_rate',
-            type=float,
-            required=False,
-            default=1e-6)
-    group.add_argument(
-            '--display_iters',
-            type=int,
-            required=False,
-            default=20)
-    group.add_argument(
-            '--use_image_summary',
-            required=False,
-            action='store_true',
-            default=False,
-            help="""
-                add valdiation image results to tensorboard
-                """)
-    group.add_argument(
-            '--only_testing',
-            required=False,
-            action='store_true',
-            default=False,
-            help="""\
-                is it training or testing?
-                """)
-    group.add_argument(
-            '--restart_training',
-            dest='resume_training',
-            required=False,
-            action='store_false',
-            default=True)
-print " ".join(sys.argv[:])
 parser = argparse.ArgumentParser()
 add_arguments(parser)
 args = parser.parse_args()
@@ -220,14 +99,15 @@ with open(val_path, 'r') as f:
     val_seq_names = [line.strip() for line in f]
 with open(train_path, 'r') as f:
     train_seq_names = [line.strip() for line in f]
-use_static_guide = args.use_static_guide 
+use_static_guide = True
+online_testing = args.online_testing
 test_imgs_with_guide = []
 train_imgs_with_guide = []
 baseDirImg = os.path.join(baseDir, 'JPEGImages', '480p')
 label_fd = '480p_split' if data_version==2017 else '480p_all'
 baseDirLabel = os.path.join(baseDir, 'Annotations', label_fd)
 result_path = args.result_path #os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSMN')
-guideDirLabel = result_path
+guideDirLabel = result_path if online_testing else baseDirLabel
 for name in val_seq_names:
     test_frames = sorted(os.listdir(os.path.join(baseDirImg, name)))
     label_fds = os.listdir(os.path.join(baseDirLabel, name)) if data_version == 2017 else \
@@ -236,10 +116,10 @@ for name in val_seq_names:
         test_imgs_with_guide += [(os.path.join(baseDirImg, name, '00000.jpg'), 
                 os.path.join(baseDirLabel, name, label_id, '00000.png'),
                 os.path.join(baseDirImg, name, '00000.jpg'))]
-        
         test_imgs_with_guide += [(os.path.join(baseDirImg, name, '00000.jpg'), 
                 os.path.join(baseDirLabel, name, label_id, '00000.png'),
                 os.path.join(baseDirImg, name, '00001.jpg'))]
+        
         if not use_static_guide:
             # use the guide image predicted from previous frame
             test_imgs_with_guide += [(os.path.join(baseDirImg, name, prev_frame), 
@@ -277,40 +157,49 @@ for name in train_seq_names:
 
 # Define Dataset
 multiclass = (data_version == 2017)
+im_size = (854, 480)
+input_pad_size = (865, 481)
+input_start_pos = (5,0)
+adaptive_crop_testing = args.adaptive_crop_testing
 dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide, 
         multiclass = multiclass,
-        adaptive_crop_testing = args.adaptive_crop_testing,
-        use_original_mask = args.masktrack,
-        sp_guide_random_blank=args.sp_guide_random_blank, 
-        guide_image_mask=args.guide_image_mask, 
-        data_aug=True, data_aug_scales=args.data_aug_scales)
-if args.masktrack:
-    import masktrack as osmn
-    
-## default config
-config = tf.ConfigProto()
-config.gpu_options.allow_growth = True
-config.allow_soft_placement = True
-config.gpu_options.per_process_gpu_memory_fraction = 0.9
-
-with tf.Graph().as_default():
-    with tf.device('/gpu:' + str(args.gpu_id)):
-        if not args.only_testing:
-            max_training_iters = args.training_iters
-            save_step = args.save_iters
-            display_step = args.display_iters
-            logs_path = args.model_save_path
-            global_step = tf.Variable(0, name='global_step', trainable=False)
-            osmn.train_finetune(dataset, args, args.src_model_path, args.seg_model_path, args.learning_rate, logs_path, max_training_iters,
-                             save_step, display_step, global_step, 
-                             batch_size = args.batch_size, config=config,
-                             iter_mean_grad=1, use_image_summary = args.use_image_summary, resume_training=args.resume_training, ckpt_name='osmn')
-
+        adaptive_crop_testing = adaptive_crop_testing,
+        use_original_mask = True,
+        guide_image_mask=False, 
+        im_size = im_size,
+        data_aug=False)
 # Test the network
-with tf.Graph().as_default():
-    with tf.device('/gpu:' + str(args.gpu_id)):
-        if not args.only_testing:
-            checkpoint_path = os.path.join(logs_path, 'osmn.ckpt-'+str(max_training_iters))
-        else:
-            checkpoint_path = args.src_model_path    
-        osmn.test(dataset, args, checkpoint_path, result_path, config=config, batch_size=1)
+batch_size = 1 # online testing only use batch size 1
+caffe.set_mode_gpu()
+caffe.set_device(args.gpu_id)
+net = caffe.Net(args.model_proto_path, args.src_model_path, caffe.TEST)
+net.blobs["data"].reshape(batch_size, 4, input_pad_size[1], input_pad_size[0])
+if not os.path.exists(result_path):
+    os.makedirs(result_path)
+for frame in range(0, dataset.get_test_size(), batch_size):
+    guide_images, mask_images, images, image_paths = dataset.next_batch(batch_size, 'test')
+    save_names = [name.split('.')[0] + '.png' for name in image_paths]
+    combined_im = np.concatenate((images, mask_images), axis=3)
+    combined_im = combined_im.transpose((0,3,1,2))
+    net.blobs["data"].data[0,:,input_start_pos[1]:input_start_pos[1]+im_size[1],
+            input_start_pos[0]:input_start_pos[0]+im_size[0]] = combined_im
+    net.forward()
+    res = net.blobs["prob"].data
+    crop_h = (res.shape[2] - im_size[1]) / 2
+    crop_w = (res.shape[3] - im_size[0]) / 2
+    res = res[:,:,crop_h:crop_h + im_size[1], crop_w:crop_w + im_size[0]]
+    
+    labels = res.argmax(1)[0]
+    score = res[0,1,:,:]
+    #score = np.array(Image.fromarray(res[0,:,:,1],mode='F').resize(im_size, Image.BILINEAR))
+    #labels = np.array(Image.fromarray(labels.astype(np.uint8)).resize(im_size, Image.NEAREST))
+    print 'Saving ' + os.path.join(result_path,save_names[0])
+    if len(save_names[0].split('/')) > 1:
+        save_path = os.path.join(result_path, *(save_names[0].split('/')[:-1]))
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+    scipy.misc.imsave(os.path.join(result_path, save_names[0]), labels.astype(np.float32))
+    curr_score_name = save_names[0][:-4]
+    #print 'Saving ' + os.path.join(result_path, curr_score_name) + '.npy'
+    #np.save(os.path.join(result_path, curr_score_name), score)
+        

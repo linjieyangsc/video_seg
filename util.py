@@ -6,7 +6,18 @@ import numpy as np
 #from image_util import compute_robust_moments
 from PIL import Image
 import random
+import cv2
 #import random
+def get_dilate_structure(r):
+    l = 2 * r + 1
+    center = (r,r)
+    x = np.arange(0,l)
+    y = np.arange(0,l)
+    nx, ny = np.meshgrid(x,y)
+    coords = np.concatenate((nx[...,np.newaxis], ny[...,np.newaxis]), axis=2)
+    s = np.sum((coords - center)**2, axis=2) <= r*r
+    return s
+
 def get_mask_bbox(m, border_pixels=8):
     if not np.any(m):
         # return a default bbox
@@ -40,7 +51,7 @@ def compute_robust_moments(binary_image, isotropic=False):
   std_dev = 1.4826*mad
   std_dev = np.maximum(std_dev, [5.0, 5.0])
   return center, std_dev
-def get_gb_image(label, center_perturb = 0.2, std_perturb=0.4, blank_prob=0.2):
+def get_gb_image(label, center_perturb = 0.2, std_perturb=0.4, blank_prob=0):
     if not np.any(label) or random.random() < blank_prob:
         #return a blank gb image
         center = np.array([label.shape[1]/2, label.shape[0]/2])
@@ -61,6 +72,30 @@ def get_gb_image(label, center_perturb = 0.2, std_perturb=0.4, blank_prob=0.2):
     D = np.exp(-D)
     D = np.clip(D, 0, 1)
     return D, center_p, std_p
+
+def perturb_mask(mask, center_perturb = 0.1, size_perturb=0.05):
+    if not np.any(mask):
+        return np.zeros((mask.shape))
+    xmin, ymin, xmax, ymax = get_mask_bbox(mask, border_pixels=0)
+    mask_size = np.array((xmax - xmin, ymax - ymin))
+    center = np.array(((xmin+xmax)/2, (ymin + ymax)/2))
+    cropped_mask = mask[ymin:ymax+1,xmin:xmax+1]
+    mask_out = np.zeros(mask.shape)
+    out_size = np.array(mask_out.shape[1::-1],dtype=np.int32)
+    size_ratio = np.random.uniform(1.0-size_perturb, 1.0 + size_perturb, 1)
+    cropped_mask = cv2.resize(cropped_mask,(0,0),fx=size_ratio[0], fy=size_ratio[0], interpolation=cv2.INTER_NEAREST)
+    size_p = np.array(cropped_mask.shape[1::-1], dtype=np.int32)
+    size_p_1 = size_p / 2
+    size_p_2 = size_p - size_p_1
+    center_p_ratio = np.random.uniform(-center_perturb, center_perturb, 2)
+    center_p = center_p_ratio * mask_size + center
+    center_p = center_p.astype(np.int32)
+    out_start = np.maximum(0, center_p - size_p_1)
+    src_start = np.maximum(0, size_p_1 - center_p)
+    out_end = np.minimum(out_size, center_p + size_p_2)
+    src_end = np.minimum(size_p, size_p - (center_p + size_p_2 - out_size))
+    mask_out[out_start[1]:out_end[1], out_start[0]:out_end[0]] = cropped_mask[src_start[1]:src_end[1], src_start[0]: src_end[0]]
+    return mask_out
 
 def adaptive_crop_box(im_shape, center_p, std_p, ext_ratio = 5):
     
