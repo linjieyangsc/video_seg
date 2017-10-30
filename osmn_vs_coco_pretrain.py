@@ -53,7 +53,7 @@ def add_arguments(parser):
             action='store_true',
             default=False)
     group.add_argument(
-            '--mod_middle_conv',
+            '--trimmed_mod',
             required=False,
             action = 'store_true',
             default=False)
@@ -102,7 +102,7 @@ def add_arguments(parser):
             '--input_size',
             type=int,
             required = False,
-            default=600)
+            default=400)
     group.add_argument(
             '--data_aug_scales',
             nargs='+', type=float,

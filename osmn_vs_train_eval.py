@@ -65,7 +65,7 @@ def add_arguments(parser):
             action='store_true',
             default=False)
     group.add_argument(
-            '--mod_middle_conv',
+            '--trimmed_mod',
             required=False,
             action = 'store_true',
             default=False)
@@ -120,6 +120,15 @@ def add_arguments(parser):
             default=True,
             help="""
                 only use the first frame as visual guide or use the previous frame as visual guide
+                """)
+    group.add_argument(
+            '--crf_preprocessing',
+            dest='crf_preprocessing',
+            required=False,
+            action='store_true',
+            default=False,
+            help="""
+                whether or not use crf preprocessing for masktrack method
                 """)
     group.add_argument(
             '--adaptive_crop_testing',
@@ -281,6 +290,7 @@ dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide,
         multiclass = multiclass,
         adaptive_crop_testing = args.adaptive_crop_testing,
         use_original_mask = args.masktrack,
+        crf_preprocessing = args.crf_preprocessing,
         sp_guide_random_blank=args.sp_guide_random_blank, 
         guide_image_mask=args.guide_image_mask, 
         data_aug=True, data_aug_scales=args.data_aug_scales)

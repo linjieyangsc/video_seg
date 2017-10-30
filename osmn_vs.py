@@ -48,6 +48,7 @@ def crop_features(feature, out_size):
     return tf.reshape(slice_input, [int(feature.get_shape()[0]), out_size[1], out_size[2], int(feature.get_shape()[3])])
 
 def modulated_conv_block(net, repeat, channels, scope_id=0, visual_mod_id = 0,
+        trimmed_mod = False,
         visual_modulation_params = None,
         spatial_modulation_params = None,
         visual_modulation = False,
@@ -55,12 +56,12 @@ def modulated_conv_block(net, repeat, channels, scope_id=0, visual_mod_id = 0,
     spatial_mod_id = 0
     for i in range(repeat):
         net = slim.conv2d(net, channels, [3,3], scope='conv{}/conv{}_{}'.format(scope_id, scope_id, i+1))
-        if visual_modulation:
+        if visual_modulation and (not trimmed_mod or i == 0):
             vis_params = tf.slice(visual_modulation_params, [0,visual_mod_id], [-1,channels], name = 'm_param{}'.format(scope_id))
             net = conditional_normalization(net, vis_params, 
                     scope='conv{}/conv{}_{}'.format(scope_id, scope_id, i+1))
             visual_mod_id += channels
-        if spatial_modulation:
+        if spatial_modulation and (not trimmed_mod or i==0):
             sp_params = tf.slice(spatial_modulation_params, 
                     [0, 0, 0, spatial_mod_id], [-1, -1, -1 , channels], 
                     name = 'm_sp_param{}'.format(scope_id))
@@ -86,8 +87,13 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
     orig_gb = model_params.orig_gb
     use_visual_modulator = model_params.use_visual_modulator
     sp_late_fusion = model_params.sp_late_fusion
-    n_modulator_param = 512 * 6 + 256 * 3 + mod_early_conv * 384 + mod_last_conv * 64
-
+    trimmed_mod = model_params.trimmed_mod
+    if trimmed_mod:
+        n_modulator_param = 512 * 2 + 256 + mod_early_conv * 192 + mod_last_conv * 64
+        num_mod_layers = [1,1,1,1,1]
+    else:
+        n_modulator_param = 512 * 6 + 256 * 3 + mod_early_conv * 384 + mod_last_conv * 64
+        num_mod_layers = [2,2,3,3,3]
     batch_norm_params = {
                     'decay': 0.99,
                     'scale': True,
@@ -270,17 +276,17 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                     else:
                         ds_mask = slim.avg_pool2d(inputs[1], [2, 2], scope='pool1')
                         if mod_early_conv:
-                            conv1_att = slim.conv2d(inputs[1], 64 * 2, [1,1], scope='conv1')
-                            conv2_att = slim.conv2d(ds_mask, 128 * 2, [1,1], scope='conv2')
+                            conv1_att = slim.conv2d(inputs[1], 64 * num_mod_layers[0], [1,1], scope='conv1')
+                            conv2_att = slim.conv2d(ds_mask, 128 * num_mod_layers[1], [1,1], scope='conv2')
                         else:
                             conv1_att = None
                             conv2_att = None
                         ds_mask = slim.avg_pool2d(ds_mask, [2,2], scope='pool2')
-                        conv3_att = slim.conv2d(ds_mask, 256 * 3, [1,1], scope='conv3')
+                        conv3_att = slim.conv2d(ds_mask, 256 * num_mod_layers[2], [1,1], scope='conv3')
                         ds_mask = slim.avg_pool2d(ds_mask, [2, 2], scope = 'pool3')
-                        conv4_att = slim.conv2d(ds_mask, 512 * 3, [1,1], scope='conv4')
+                        conv4_att = slim.conv2d(ds_mask, 512 * num_mod_layers[3], [1,1], scope='conv4')
                         ds_mask = slim.avg_pool2d(ds_mask, [2, 2], scope = 'pool4')
-                        conv5_att = slim.conv2d(ds_mask, 512 * 3, [1,1], scope='conv5')
+                        conv5_att = slim.conv2d(ds_mask, 512 * num_mod_layers[4], [1,1], scope='conv5')
             
             with tf.variable_scope('seg'):
                 # Collect outputs of all intermediate layers.
@@ -290,6 +296,7 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                   with slim.arg_scope([slim.max_pool2d], padding='SAME'):
                     net_1, visual_mod_id = modulated_conv_block(inputs[2], 2, 64,
                             scope_id = 1, visual_mod_id = visual_mod_id,
+                            trimmed_mod = trimmed_mod,
                             visual_modulation_params = modulator_params,
                             spatial_modulation_params = conv1_att,
                             visual_modulation = use_visual_modulator and mod_early_conv,
@@ -298,6 +305,7 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                     net_2 = slim.max_pool2d(net_1, [2, 2], scope='pool1')
                     net_2, visual_mod_id = modulated_conv_block(net_2, 2, 128,
                             scope_id = 2, visual_mod_id = visual_mod_id,
+                            trimmed_mod = trimmed_mod,
                             visual_modulation_params = modulator_params,
                             spatial_modulation_params = conv2_att,
                             visual_modulation = use_visual_modulator and mod_early_conv,
@@ -306,6 +314,7 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                     net_3 = slim.max_pool2d(net_2, [2, 2], scope='pool2')
                     net_3, visual_mod_id = modulated_conv_block(net_3, 3, 256,
                             scope_id = 3, visual_mod_id = visual_mod_id,
+                            trimmed_mod = trimmed_mod,
                             visual_modulation_params = modulator_params,
                             spatial_modulation_params = conv3_att,
                             visual_modulation = use_visual_modulator, 
@@ -313,6 +322,7 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                     net_4 = slim.max_pool2d(net_3, [2, 2], scope='pool3')
                     net_4, visual_mod_id = modulated_conv_block(net_4, 3, 512,
                             scope_id = 4, visual_mod_id = visual_mod_id,
+                            trimmed_mod = trimmed_mod,
                             visual_modulation_params = modulator_params,
                             spatial_modulation_params = conv4_att,
                             visual_modulation = use_visual_modulator, 
@@ -320,6 +330,7 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                     net_5 = slim.max_pool2d(net_4, [2, 2], scope='pool4')
                     net_5, visual_mod_id = modulated_conv_block(net_5, 3, 512,
                             scope_id = 5, visual_mod_id = visual_mod_id,
+                            trimmed_mod = trimmed_mod,
                             visual_modulation_params = modulator_params,
                             spatial_modulation_params = conv5_att,
                             visual_modulation = use_visual_modulator,
