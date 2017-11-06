@@ -9,6 +9,7 @@ sys.path.append('../coco/PythonAPI')
 from pycocotools.coco import COCO
 test_anno_file = '/raid/ljyang/data/MS_COCO/annotations/instances_val2017.json'
 gt_annos = cPickle.load(open('cache/val_annos.pkl', 'rb'))
+print 'obj number', len(gt_annos)
 test_data = COCO(test_anno_file)
 pred_path = sys.argv[1] #'DAVIS/Results/Segmentations/480p/OSVOS'
 pred_im_num =len([name for name in os.listdir(pred_path) if len(name) == 10 and name[-4:]=='.png'])

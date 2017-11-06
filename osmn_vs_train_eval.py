@@ -11,9 +11,11 @@ slim = tf.contrib.slim
 import argparse
 import osmn_vs as osmn
 from dataset_davis_vs import Dataset
-
+import random
+from util import get_mask_bbox
+import common_args 
 def add_arguments(parser):
-    group = parser.add_argument_group(title='Paths Arguments')
+    group = parser.add_argument_group('Additional params')
     group.add_argument(
             '--data_path',
             type=str,
@@ -30,16 +32,6 @@ def add_arguments(parser):
             required=False,
             default='')
     group.add_argument(
-            '--result_path',
-            type=str,
-            required=True,
-            default='')
-    group.add_argument(
-            '--model_save_path',
-            type=str,
-            required=False,
-            default='')
-    group.add_argument(
             '--data_version',
             type=int,
             required=False,
@@ -48,179 +40,41 @@ def add_arguments(parser):
                 which DAVIS version to use? 2016 or 2017
                 """)
     group.add_argument(
+            '--randomize_guide',
+            required=False,
+            action='store_true',
+            default=False)
+    group.add_argument(
+            '--label_valid_ratio',
+            type=float,
+            required=False,
+            default=0.003)
+    group.add_argument(
+            '--bbox_valid_ratio',
+            type=float,
+            required=False,
+            default=0.2)
+    group.add_argument(
             '--test_split',
             type=str,
             required=False,
             default='val'
             )
-    group = parser.add_argument_group(title='Model Arguments')
-    group.add_argument(
-            '--mod_last_conv',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--mod_early_conv',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--trimmed_mod',
-            required=False,
-            action = 'store_true',
-            default=False)
-    group.add_argument(
-            '--orig_gb',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--sp_late_fusion',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--spatial_mod_use_bn',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--no_visual_modulator',
-            required=False,
-            dest='use_visual_modulator',
-            action='store_false',
-            default=True)
-    group.add_argument(
-            '--loss_normalize',
-            required=False,
-            action='store_true',
-            default=False)
-    ## masktrack params
-    group.add_argument(
-            '--aligned_size',
-            type=list,
-            required=False,
-            default=[865, 481])
-    group.add_argument(
-            '--train_seg',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--masktrack',
-            required=False,
-            action='store_true',
-            default=False)
-    group = parser.add_argument_group(title='Data Argument')
-    group.add_argument(
-            '--use_prev_guide',
-            dest='use_static_guide',
-            required=False,
-            action='store_false',
-            default=True,
-            help="""
-                only use the first frame as visual guide or use the previous frame as visual guide
-                """)
-    group.add_argument(
-            '--crf_preprocessing',
-            dest='crf_preprocessing',
-            required=False,
-            action='store_true',
-            default=False,
-            help="""
-                whether or not use crf preprocessing for masktrack method
-                """)
-    group.add_argument(
-            '--adaptive_crop_testing',
-            required=False,
-            action='store_true',
-            default=False,
-            help="""
-                use adaptive croppping around spatial guide to do testing
-                """)
     group.add_argument(
             '--data_aug_scales',
-            type=list,
+            type=float, nargs='+',
             required=False,
             default=[0.5,0.8,1])
-    group.add_argument(
-            '--no_guide_image_mask',
-            dest='guide_image_mask',
-            required=False,
-            action='store_false',
-            default=True)
-    group.add_argument(
-            '--sp_guide_random_blank',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--batch_size',
-            type=int,
-            required=False,
-            default=4)
-    group.add_argument(
-            '--save_score',
-            required=False,
-            action='store_true',
-            default=False)
-    group = parser.add_argument_group(title='Running Arguments')
-    group.add_argument(
-            '--gpu_id',
-            type=int,
-            required=False,
-            default=0)
-    group.add_argument(
-            '--training_iters',
-            type=int,
-            required=False,
-            default=10000)
-    group.add_argument(
-            '--save_iters',
-            type=int,
-            required=False,
-            default=1000)
-    group.add_argument(
-            '--learning_rate',
-            type=float,
-            required=False,
-            default=1e-6)
-    group.add_argument(
-            '--display_iters',
-            type=int,
-            required=False,
-            default=20)
-    group.add_argument(
-            '--use_image_summary',
-            required=False,
-            action='store_true',
-            default=False,
-            help="""
-                add valdiation image results to tensorboard
-                """)
-    group.add_argument(
-            '--only_testing',
-            required=False,
-            action='store_true',
-            default=False,
-            help="""\
-                is it training or testing?
-                """)
-    group.add_argument(
-            '--restart_training',
-            dest='resume_training',
-            required=False,
-            action='store_false',
-            default=True)
 print " ".join(sys.argv[:])
 parser = argparse.ArgumentParser()
+common_args.add_arguments(parser)
 add_arguments(parser)
 args = parser.parse_args()
 print args
 sys.stdout.flush()
 baseDir = args.data_path
 data_version =args.data_version
-
+random.seed(1234)
 # User defined parameters
 train_path = os.path.join(baseDir, 'ImageSets/%d/train.txt' % data_version)
 val_path = os.path.join(baseDir, 'ImageSets/%d/%s.txt' % (data_version, args.test_split))
@@ -230,6 +84,7 @@ with open(val_path, 'r') as f:
 with open(train_path, 'r') as f:
     train_seq_names = [line.strip() for line in f]
 use_static_guide = args.use_static_guide 
+randomize_guide = args.randomize_guide
 test_imgs_with_guide = []
 train_imgs_with_guide = []
 baseDirImg = os.path.join(baseDir, 'JPEGImages', '480p')
@@ -267,6 +122,7 @@ for name in train_seq_names:
     train_frames = sorted(os.listdir(os.path.join(baseDirImg, name)))
     label_fds = os.listdir(os.path.join(baseDirLabel, name)) if data_version == 2017 else \
             [os.path.join(baseDirLabel, name)]
+    print name
     for label_id in label_fds:
         if not use_static_guide:
             # use the ground truth guide image from previous frame
@@ -275,6 +131,33 @@ for name in train_seq_names:
                     os.path.join(baseDirImg, name, frame),
                     os.path.join(baseDirLabel, name, label_id, frame[:-4] + '.png')) 
                     for prev_frame, frame in zip(train_frames[:-1], train_frames[1:])]
+        elif randomize_guide:
+            #get valid image ids with objects
+            valid_label_idx = []
+            for frame in train_frames:
+                label = Image.open(os.path.join(baseDirLabel, name, label_id, frame[:-4] + '.png'))
+                label_data = np.array(label) > 0
+                bbox = get_mask_bbox(label_data, border_pixels=0)
+                if np.sum(label_data) > label_data.size * args.label_valid_ratio and \
+                        np.sum(label_data) > (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) * args.bbox_valid_ratio:
+                    valid_label_idx.append(frame[:-4])
+            print 'number of valid labels:%d\%d' % (len(valid_label_idx), len(train_frames))
+            sys.stdout.flush()
+            if len(valid_label_idx) > 0:
+                # randomly select guide image for each frame
+                random_guide_idx = np.random.randint(0, len(valid_label_idx),(len(train_frames)))
+            else:
+                # default to use the first frame
+                valid_label_idx = [train_frames[0][:-4]]
+                random_guide_idx = np.zeros((len(train_frames)), dtype=np.int32)
+            # use random frame as visual guide and ground truth of previous frame as spatial guide
+            train_imgs_with_guide += [(os.path.join(baseDirImg, name, valid_label_idx[guide_id]+'.jpg'),
+                os.path.join(baseDirLabel, name, label_id, valid_label_idx[guide_id]+'.png'),
+                os.path.join(baseDirLabel, name, label_id, prev_frame[:-4] + '.png'),
+                os.path.join(baseDirImg, name, frame),
+                os.path.join(baseDirLabel, name, label_id, frame[:-4] + '.png'))
+                for prev_frame, frame, guide_id in zip(train_frames[:-1], train_frames[1:], random_guide_idx[1:])]
+            
         else:
             # use the first fram as visual guide and ground truth of previous frame as spatial guide
             train_imgs_with_guide += [(os.path.join(baseDirImg, name, '00000.jpg'),
@@ -291,7 +174,7 @@ dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide,
         adaptive_crop_testing = args.adaptive_crop_testing,
         use_original_mask = args.masktrack,
         crf_preprocessing = args.crf_preprocessing,
-        sp_guide_random_blank=args.sp_guide_random_blank, 
+        sp_guide_random_blank=args.spatial_guide_random_blank, 
         guide_image_mask=args.guide_image_mask, 
         data_aug=True, data_aug_scales=args.data_aug_scales)
 if args.masktrack:

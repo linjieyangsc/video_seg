@@ -11,9 +11,9 @@ slim = tf.contrib.slim
 import argparse
 import osmn_vs as osmn
 from dataset_coco_vs import Dataset
-
+import common_args
 def add_arguments(parser):
-    group = parser.add_argument_group(title='Paths Arguments')
+    group = parser.add_argument_group('Additional params')
     group.add_argument(
             '--data_path',
             type=str,
@@ -29,75 +29,8 @@ def add_arguments(parser):
             type=str,
             required=False,
             default='models/vgg_16.ckpt')
-    group.add_argument(
-            '--result_path',
-            type=str,
-            required=True,
-            default='')
-    group.add_argument(
-            '--model_save_path',
-            type=str,
-            required=False,
-            default='')
 
 
-    group = parser.add_argument_group(title='Model Arguments')
-    group.add_argument(
-            '--mod_last_conv',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--mod_early_conv',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--trimmed_mod',
-            required=False,
-            action = 'store_true',
-            default=False)
-    group.add_argument(
-            '--orig_gb',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--sp_late_fusion',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--spatial_mod_use_bn',
-            required=False,
-            action='store_true',
-            default=False)
-    ## masktrack params
-    group.add_argument(
-            '--aligned_size',
-            type=list,
-            required=False,
-            default=None)
-    group.add_argument(
-            '--masktrack',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--train_seg',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--no_visual_modulator',
-            dest='use_visual_modulator',
-            action = 'store_false',
-            default=True)
-    group.add_argument(
-            '--loss_normalize',
-            action = 'store_true',
-            default=False)
-    group = parser.add_argument_group(title='Data Argument')
     group.add_argument(
             '--input_size',
             type=int,
@@ -107,90 +40,21 @@ def add_arguments(parser):
             '--data_aug_scales',
             nargs='+', type=float,
             required=False,
-            default=[1])
+            default=[0.8, 1, 1.2])
     group.add_argument(
-            '--no_visual_guide_mask',
-            dest='visual_guide_mask',
+            '--random_crop_ratio',
             required=False,
-            action='store_false',
-            default=True)
+            default=0.0,
+            type=float)
     group.add_argument(
-            '--sp_guide_random_blank',
+            '--motion_blur_prob',
             required=False,
-            action='store_true',
-            default=False)
-            
-    group.add_argument(
-            '--adaptive_crop_testing',
-            required=False,
-            action='store_true',
-            default=False,
-            help="""
-                use adaptive croppping around spatial guide to do testing
-                """)
-    group.add_argument(
-            '--batch_size',
-            type=int,
-            required=False,
-            default=6)
-
-    group.add_argument(
-            '--save_score',
-            required=False,
-            action='store_true',
-            default=False)
-    group = parser.add_argument_group(title='Running Arguments')
-    group.add_argument(
-            '--gpu_id',
-            type=int,
-            required=False,
-            default=0)
-    group.add_argument(
-            '--training_iters',
-            type=int,
-            required=False,
-            default=100000)
-    group.add_argument(
-            '--save_iters',
-            type=int,
-            required=False,
-            default=1000)
-    group.add_argument(
-            '--learning_rate',
-            type=float,
-            required=False,
-            default=1e-5)
-    group.add_argument(
-            '--display_iters',
-            type=int,
-            required=False,
-            default=20)
-    group.add_argument(
-            '--use_image_summary',
-            required=False,
-            action='store_true',
-            default=False,
-            help="""
-                add valdiation image results to tensorboard
-                """)
-    group.add_argument(
-            '--only_testing',
-            required=False,
-            action='store_true',
-            default=False,
-            help="""\
-                is it training or testing?
-                """)
-    group.add_argument(
-            '--restart_training',
-            dest='resume_training',
-            required=False,
-            action='store_false',
-            default=True)
-
+            default=0.0,
+            type=float)
 print " ".join(sys.argv[:])
 
 parser = argparse.ArgumentParser()
+common_args.add_arguments(parser)
 add_arguments(parser)
 args = parser.parse_args()
 baseDir = args.data_path
@@ -205,8 +69,11 @@ if args.masktrack:
     import masktrack as osmn
 # Define Dataset
 dataset = Dataset(train_file, val_file, train_path, val_path, 
-        visual_guide_mask=args.visual_guide_mask, sp_guide_random_blank=args.sp_guide_random_blank,
-        use_original_mask = args.masktrack, data_aug=True, input_size=args.input_size, data_aug_scales=args.data_aug_scales)
+         sp_guide_random_blank=args.spatial_guide_random_blank,
+        use_original_mask = args.masktrack, data_aug=True, 
+        motion_blur_prob = args.motion_blur_prob,
+        random_crop_ratio = args.random_crop_ratio,
+        input_size=args.input_size, data_aug_scales=args.data_aug_scales)
 # Train parameters
 logs_path = args.model_save_path
 max_training_iters = args.training_iters

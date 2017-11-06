@@ -53,7 +53,7 @@ class Dataset:
         np.random.shuffle(self.train_idx)
         self.size = im_size
         self.crop_size = 480
-        self.mean_value = np.array((104.01, 116.67, 122.68))
+        self.mean_value = np.array((104, 117, 123))
         self.guide_size = (224, 224)
 
     def next_batch(self, batch_size, phase):
@@ -106,9 +106,9 @@ class Dataset:
                             self.data_augmentation(image, label, ref_label, new_size)
                 bbox = get_mask_bbox(np.array(guide_label))
                 if self.sp_guide_random_blank:
-                    gb_image, _, _ = get_gb_image(np.array(ref_label_new), blank_prob=self.blank_prob)
+                    gb_image, _, _ = get_gb_image(np.array(ref_label_new), std_perturb=0.2, blank_prob=self.blank_prob)
                 elif not self.use_original_mask:
-                    gb_image, _, _ = get_gb_image(np.array(ref_label_new))
+                    gb_image, _, _ = get_gb_image(np.array(ref_label_new), std_perturb=0.2)
                 else:
                     gb_image = perturb_mask(np.array(ref_label_new))
                     gb_image = ndimage.morphology.binary_dilation(gb_image, 
@@ -146,6 +146,7 @@ class Dataset:
             images = []
             image_paths = []
             self.crop_boxes = []
+            self.images = []
             if self.test_ptr + batch_size < self.test_size:
                 idx = np.array(self.test_idx[self.test_ptr:self.test_ptr + batch_size])
                 self.test_ptr += batch_size
@@ -180,27 +181,23 @@ class Dataset:
                     # resize short size of image to self.size[0]
                     resize_ratio = max(float(self.size[0])/image.size[0], float(self.size[0])/image.size[1])
                     self.new_size = (int(resize_ratio * image.size[0]), int(resize_ratio * image.size[1]))
+                self.images.append(np.array(image))
                 ref_label = ref_label.resize(self.new_size, Image.NEAREST)
                 ref_label_data = np.array(ref_label) / 255
-                gb_image, center, std = get_gb_image(ref_label_data, center_perturb=0, std_perturb=0,
+                gb_image, _, _ = get_gb_image(ref_label_data, center_perturb=0, std_perturb=0,
                         blank_prob=0)
                 if self.use_original_mask:
                     if self.crf_preprocessing:
-                        crf = dcrf.DenseCRF2D(image.size[0], image.size[1], 2)
-                        unary = unary_from_labels(ref_label_data, 2, gt_prob=0.8, zero_unsure=False)
-                        crf.setUnaryEnergy(unary)
-                        crf.addPairwiseGaussian(sxy=(3,3), compat=3)
-                        crf.addPairwiseBilateral(sxy=(70, 70), srgb=(5, 5, 5), rgbim=np.array(image), compat=3)
-                        crf_out = crf.inference(self.crf_infer_steps)
-
-                        # Find out the most probable class for each pixel.
-                        ref_label_data = np.argmax(crf_out, axis=0).reshape(ref_label_data.shape)
+                        ref_label_data = self.crf_processing(np.array(image), ref_label_data)
                     gb_image = ndimage.morphology.binary_dilation(ref_label_data, 
                             structure=self.dilate_structure) * 255
                 if self.adaptive_crop_testing:
-                    crop_box = adaptive_crop_box(gb_image.shape, center, std)
+                    if np.any(ref_label_data):
+                        crop_box = adaptive_crop_box(ref_label_data)
+                    else:
+                        # use the whole image
+                        crop_box = (0,0, ref_label_data.shape[1], ref_label_data.shape[0])
                     crop_w, crop_h = crop_box[2] - crop_box[0], crop_box[3] - crop_box[1]
-                    print 'range of gb_image before crop', np.amax(gb_image), np.amin(gb_image)
                     #gb_image = Image.fromarray(gb_image, mode='F')
                     gb_image = gb_image[crop_box[1]: crop_box[3], crop_box[0]: crop_box[2]]
                     #gb_image = gb_image.crop(crop_box)
@@ -209,11 +206,9 @@ class Dataset:
                     resize_ratio = max(1, resize_ratio)
                     new_size = (int(resize_ratio * crop_w + 0.5), int(resize_ratio * crop_h + 0.5))
                     self.crop_boxes.append(crop_box)
-                    print 'resized shape', new_size
                     #gb_image = gb_image.resize(new_size, Image.BILINEAR)
                     gb_image = ndimage.zoom(gb_image, resize_ratio, mode='nearest')
                     
-                    print 'gb resize shape', gb_image.shape
                     image = image.resize(new_size, Image.BILINEAR)
                     #gb_image = np.array(gb_image, dtype=np.float32)
                 else:
@@ -253,6 +248,23 @@ class Dataset:
                 label = label.transpose(Image.FLIP_LEFT_RIGHT)
                 guide_label = guide_label.transpose(Image.FLIP_LEFT_RIGHT)
         return im, label, guide_label
+    def crf_processing(self, image, label, soft_label=False):
+        crf = dcrf.DenseCRF2D(image.shape[1], image.shape[0], 2)
+        if not soft_label:
+            unary = unary_from_labels(label, 2, gt_prob=0.8, zero_unsure=False)
+        else:
+            if len(label.shape)==2:
+                p_neg = 1.0 - label
+                label = np.concatenate((p_neg[...,np.newaxis], label[...,np.newaxis]), axis=2)
+            label = label.transpose((2,0,1))
+            unary = unary_from_softmax(label)
+        crf.setUnaryEnergy(unary)
+        crf.addPairwiseGaussian(sxy=(3,3), compat=3)
+        crf.addPairwiseBilateral(sxy=(70, 70), srgb=(5, 5, 5), rgbim=image, compat=3)
+        crf_out = crf.inference(self.crf_infer_steps)
+
+        # Find out the most probable class for each pixel.
+        return np.argmax(crf_out, axis=0).reshape(label.shape)
 
     def restore_crop(self, res):
         n_samples = res.shape[0]

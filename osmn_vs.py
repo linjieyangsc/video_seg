@@ -85,9 +85,11 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
     mod_early_conv = model_params.mod_early_conv
     spatial_mod_use_bn = model_params.spatial_mod_use_bn
     orig_gb = model_params.orig_gb
+    visual_mod_use_dropout = model_params.visual_mod_use_dropout
     use_visual_modulator = model_params.use_visual_modulator
-    sp_late_fusion = model_params.sp_late_fusion
+    use_spatial_modulator = model_params.use_spatial_modulator
     trimmed_mod = model_params.trimmed_mod
+    train_seg = model_params.train_seg
     if trimmed_mod:
         n_modulator_param = 512 * 2 + 256 + mod_early_conv * 192 + mod_last_conv * 64
         num_mod_layers = [1,1,1,1,1]
@@ -99,7 +101,7 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                     'scale': True,
                     'epsilon': 0.001,
                     'updates_collections': None,
-                    'is_training': is_training
+                    'is_training': not model_params.fix_bn and is_training
     }
     with tf.variable_scope(scope, [inputs]) as sc:
         end_points_collection = sc.name + '_end_points'
@@ -123,9 +125,11 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                     net_5 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
                     net = slim.max_pool2d(net_5, [2, 2], scope='pool5')
                     net = slim.conv2d(net, 4096, [7, 7], padding='VALID', scope='fc6')
-                    net = slim.dropout(net, 0.5, is_training=is_training, scope='dropout6')
+                    if visual_mod_use_dropout:
+                        net = slim.dropout(net, 0.5, is_training=is_training, scope='dropout6')
                     net = slim.conv2d(net, 4096, [1, 1], scope='fc7')
-                    net = slim.dropout(net, 0.5, is_training=is_training, scope='dropout7')
+                    if visual_mod_use_dropout:
+                        net = slim.dropout(net, 0.5, is_training=is_training, scope='dropout7')
                     #with slim.arg_scope([slim.fully_connected],
                     #        activation_fn = tf.nn.sigmoid, biases_initializer=tf.constant_initializer(5)):
                     modulator_params = slim.conv2d(net, n_modulator_param, [1, 1],
@@ -263,16 +267,12 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                                         activation_fn=tf.nn.relu) as bn_arg_sc:
                         pass
                 with slim.arg_scope(bn_arg_sc):
-                    if sp_late_fusion:
+                    if not use_spatial_modulator:
                         conv1_att = None
-                        ds_mask = slim.avg_pool2d(inputs[1], [8, 8], scope='pool1')
-                        conv2_att = slim.conv2d(ds_mask, 16, [3,3], scope='conv2')
-                        ds_mask = slim.avg_pool2d(ds_mask, [4, 4], scope='pool2')
-                        conv3_att = slim.conv2d(ds_mask, 16, [3,3], scope='conv3')
-                        ds_mask = slim.avg_pool2d(ds_mask, [2,2], scope='pool3')
-                        conv4_att = slim.conv2d(ds_mask, 16, [3,3], scope='conv4')
-                        ds_mask = slim.avg_pool2d(ds_mask, [2, 2], scope = 'pool4')
-                        conv5_att = slim.conv2d(ds_mask, 16, [3,3], scope='conv5')
+                        conv2_att = None
+                        conv3_att = None
+                        conv4_att = None
+                        conv5_att = None
                     else:
                         ds_mask = slim.avg_pool2d(inputs[1], [2, 2], scope='pool1')
                         if mod_early_conv:
@@ -291,7 +291,7 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
             with tf.variable_scope('seg'):
                 # Collect outputs of all intermediate layers.
                 with slim.arg_scope([slim.conv2d],
-                                    padding='SAME',
+                                    padding='SAME', trainable = train_seg,
                                     outputs_collections=end_points_collection):
                   with slim.arg_scope([slim.max_pool2d], padding='SAME'):
                     net_1, visual_mod_id = modulated_conv_block(inputs[2], 2, 64,
@@ -300,7 +300,7 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                             visual_modulation_params = modulator_params,
                             spatial_modulation_params = conv1_att,
                             visual_modulation = use_visual_modulator and mod_early_conv,
-                            spatial_modulation = not sp_late_fusion and mod_early_conv)
+                            spatial_modulation = use_spatial_modulator and mod_early_conv)
 
                     net_2 = slim.max_pool2d(net_1, [2, 2], scope='pool1')
                     net_2, visual_mod_id = modulated_conv_block(net_2, 2, 128,
@@ -309,7 +309,7 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                             visual_modulation_params = modulator_params,
                             spatial_modulation_params = conv2_att,
                             visual_modulation = use_visual_modulator and mod_early_conv,
-                            spatial_modulation = not sp_late_fusion and mod_early_conv)
+                            spatial_modulation = use_spatial_modulator and mod_early_conv)
 
                     net_3 = slim.max_pool2d(net_2, [2, 2], scope='pool2')
                     net_3, visual_mod_id = modulated_conv_block(net_3, 3, 256,
@@ -318,7 +318,7 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                             visual_modulation_params = modulator_params,
                             spatial_modulation_params = conv3_att,
                             visual_modulation = use_visual_modulator, 
-                            spatial_modulation = not sp_late_fusion)
+                            spatial_modulation = use_spatial_modulator)
                     net_4 = slim.max_pool2d(net_3, [2, 2], scope='pool3')
                     net_4, visual_mod_id = modulated_conv_block(net_4, 3, 512,
                             scope_id = 4, visual_mod_id = visual_mod_id,
@@ -326,7 +326,7 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                             visual_modulation_params = modulator_params,
                             spatial_modulation_params = conv4_att,
                             visual_modulation = use_visual_modulator, 
-                            spatial_modulation = not sp_late_fusion)
+                            spatial_modulation = use_spatial_modulator)
                     net_5 = slim.max_pool2d(net_4, [2, 2], scope='pool4')
                     net_5, visual_mod_id = modulated_conv_block(net_5, 3, 512,
                             scope_id = 5, visual_mod_id = visual_mod_id,
@@ -334,7 +334,7 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                             visual_modulation_params = modulator_params,
                             spatial_modulation_params = conv5_att,
                             visual_modulation = use_visual_modulator,
-                            spatial_modulation = not sp_late_fusion)
+                            spatial_modulation = use_spatial_modulator)
                     # Get side outputs of the network
                     with slim.arg_scope([slim.conv2d],
                                         activation_fn=None):
@@ -342,11 +342,6 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                         side_3 = slim.conv2d(net_3, 16, [3, 3], scope='conv3_3_16')
                         side_4 = slim.conv2d(net_4, 16, [3, 3], scope='conv4_3_16')
                         side_5 = slim.conv2d(net_5, 16, [3, 3], scope='conv5_3_16')
-                        if sp_late_fusion:
-                            side_2 = tf.add(side_2, conv2_att)
-                            side_3 = tf.add(side_3, conv3_att)
-                            side_4 = tf.add(side_4, conv4_att)
-                            side_5 = tf.add(side_5, conv5_att)
 
                         with slim.arg_scope([slim.convolution2d_transpose],
                                             activation_fn=None, biases_initializer=None, padding='VALID',
@@ -611,9 +606,9 @@ def _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_pat
             # Display training status
             if step % display_step == 0:
                 if use_image_summary:
-                    test_g_image, test_gb_image, test_image, _ = dataset.next_batch(batch_size, 'test')
-                    curr_output = sess.run(img_summary, feed_dict={guide_image:test_g_image, gb_image:test_gb_image,
-                    input_image: test_image })
+                    #test_g_image, test_gb_image, test_image, _ = dataset.next_batch(batch_size, 'test')
+                    curr_output = sess.run(img_summary, feed_dict={guide_image:batch_g_image, gb_image:batch_gb_image,
+                    input_image: batch_image })
                     summary_writer.add_summary(curr_output, step)
                 print >> sys.stderr, "{} Iter {}: Training Loss = {:.4f}".format(datetime.now(), step, batch_loss)
 
@@ -672,6 +667,7 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
     with slim.arg_scope(osmn_arg_scope()):
         net, end_points = osmn([guide_image, gb_image, input_image], model_params, is_training=False)
     probabilities = tf.nn.sigmoid(net)
+    mod_params = end_points['osmn/modulator/fc8']
     global_step = tf.Variable(0, name='global_step', trainable=False)
 
     # Create a saver to load the network
@@ -687,12 +683,18 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
         for frame in range(0, dataset.get_test_size(), batch_size):
             guide_images, gb_images, images, image_paths = dataset.next_batch(batch_size, 'test')
             save_names = [ name.split('.')[0] + '.png' for name in image_paths]
-            res = sess.run(probabilities, feed_dict={guide_image: guide_images, gb_image:gb_images, input_image: images})
+            res_all = sess.run([probabilities,mod_params], feed_dict={guide_image: guide_images, gb_image:gb_images, input_image: images})
+            res = res_all[0]
+            params = res_all[1]
             if model_params.adaptive_crop_testing:
                 res = dataset.restore_crop(res)
-            res_np = res.astype(np.float32)[:, :, :, 0] > 0.5
-            guide_images += np.array((104, 117, 123))
-            guide_images /= 255
+            if model_params.crf_postprocessing:
+                res_np = np.zeros(res.shape[:-1])
+                for i in batch_size:
+                    res_np[i] = dataset.crf_processing(dataset.images[i], res[i,:,:,0])
+            else:
+                res_np = res.astype(np.float32)[:, :, :, 0] > 0.5
+            
             for i in range(min(batch_size, dataset.get_test_size() - frame)):
                 print 'Saving ' + os.path.join(result_path, save_names[i])
                 if len(save_names[i].split('/')) > 1:
@@ -704,6 +706,6 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
                 if model_params.save_score:
                     print 'Saving ' + os.path.join(result_path, curr_score_name) + '.npy'
                     np.save(os.path.join(result_path, curr_score_name), res.astype(np.float32)[i,:,:,0])
-
+                    np.save(os.path.join(result_path, curr_score_name+'_params'), params.astype(np.float32)[i])
                 #scipy.misc.imsave(os.path.join(result_path, curr_score_name + '_gb.png'), gb_images[i,:,:,0].astype(np.float32))
                 #scipy.misc.imsave(os.path.join(result_path, curr_score_name + '_guide.png'),guide_images[i])

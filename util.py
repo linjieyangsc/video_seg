@@ -18,6 +18,21 @@ def get_dilate_structure(r):
     s = np.sum((coords - center)**2, axis=2) <= r*r
     return s
 
+def get_motion_blur_kernel(size):
+    # generating the kernel
+    kernel_motion_blur = np.zeros((size, size))
+    kernel_type = random.choice((0,1,2,3))
+    if kernel_type == 0:
+        kernel_motion_blur[int((size-1)/2), :] = 1
+    elif kernel_type == 1:
+        kernel_motion_blur[:, int((size-1)/2)] = 1
+    elif kernel_type == 2:
+        kernel_motion_blur[range(size), range(size)] = 1
+    else:
+        kernel_motion_blur[range(size), range(size-1,-1,-1)] = 1
+    kernel_motion_blur = kernel_motion_blur / size
+    return kernel_motion_blur
+
 def get_mask_bbox(m, border_pixels=8):
     if not np.any(m):
         # return a default bbox
@@ -97,12 +112,14 @@ def perturb_mask(mask, center_perturb = 0.1, size_perturb=0.05):
     mask_out[out_start[1]:out_end[1], out_start[0]:out_end[0]] = cropped_mask[src_start[1]:src_end[1], src_start[0]: src_end[0]]
     return mask_out
 
-def adaptive_crop_box(im_shape, center_p, std_p, ext_ratio = 5):
-    
-    p1 = np.array(center_p - std_p * ext_ratio, dtype=np.int32)
+def adaptive_crop_box(mask, ext_ratio = 0.3):
+    bbox = get_mask_bbox(mask, border_pixels=0)
+    bbox_size = np.array([bbox[2]-bbox[0]+1, bbox[3]-bbox[1]+1])
+    bbox_center = np.array([bbox[0]+bbox[2], bbox[1]+bbox[3]])/2
+    p1 = np.array(bbox_center - bbox_size * (1+ext_ratio), dtype=np.int32)
     p1 = np.maximum(0, p1)
-    p2 = np.array(center_p + std_p * ext_ratio, dtype=np.int32)
-    p2 = np.minimum(im_shape[::-1], p2)
+    p2 = np.array(bbox_center + bbox_size * (1+ext_ratio), dtype=np.int32)
+    p2 = np.minimum(mask.shape[::-1], p2)
     return (p1[0], p1[1], p2[0], p2[1])
 
 def to_bgr(image):
@@ -116,8 +133,22 @@ def mask_image(image, label):
     assert(image.shape[:2] == label.shape)
     image[label == 0, :] = 0
     return image
-def data_augmentation(im, label, new_size, data_aug_flip):
+def data_augmentation(im, label, new_size, 
+        data_aug_flip = True, random_crop_ratio = 0):
     #old_size = im.size
+    if random_crop_ratio:
+        crop_pos = random.choice((0,1,2,3))
+        crop_points = [0,0,im.size[0],im.size[1]]
+        if crop_pos == 0:
+            crop_points[0] = int(random_crop_ratio * im.size[0])
+        elif crop_pos == 1:
+            crop_points[1] = int(random_crop_ratio * im.size[1])
+        elif crop_pos == 2:
+            crop_points[2] -= int(random_crop_ratio * im.size[0])
+        else:
+            crop_points[3] -= int(random_crop_ratio * im.size[1])
+        im = im.crop(crop_points)
+        label = label.crop(crop_points)
     im = im.resize(new_size, Image.BILINEAR)
     label = label.resize(new_size, Image.NEAREST)
     #bbox = (bbox[0] * new_size[0] / float(old_size[0]),
@@ -128,9 +159,6 @@ def data_augmentation(im, label, new_size, data_aug_flip):
         if random.random() > 0.5:
             im = im.transpose(Image.FLIP_LEFT_RIGHT)
             label = label.transpose(Image.FLIP_LEFT_RIGHT)
-            #bbox = (new_size[0] - bbox[1],
-            #        new_size[0] - bbox[0],
-            #       bbox[2], bbox[3])
     return im, label
 def calcIoU(gt, pred, obj_n):
     assert(gt.shape == pred.shape)
