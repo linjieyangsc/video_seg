@@ -559,7 +559,7 @@ def _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_pat
         summary_writer = tf.summary.FileWriter(logs_path, graph=tf.get_default_graph())
 
         # Create saver to manage checkpoints
-        saver = tf.train.Saver(max_to_keep=1)
+        saver = tf.train.Saver(max_to_keep=10)
 
         last_ckpt_path = tf.train.latest_checkpoint(logs_path)
         if last_ckpt_path is not None and resume_training:
@@ -690,11 +690,10 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
                 res = dataset.restore_crop(res)
             if model_params.crf_postprocessing:
                 res_np = np.zeros(res.shape[:-1])
-                for i in batch_size:
-                    res_np[i] = dataset.crf_processing(dataset.images[i], res[i,:,:,0])
+                for i in range(batch_size):
+                    res_np[i] = dataset.crf_processing(dataset.images[i], res[i,:,:,0], soft_label=True)
             else:
-                res_np = res.astype(np.float32)[:, :, :, 0] > 0.5
-            
+                res_np = res.astype(np.float32)[:, :, :, 0] > 0.5             
             for i in range(min(batch_size, dataset.get_test_size() - frame)):
                 print 'Saving ' + os.path.join(result_path, save_names[i])
                 if len(save_names[i].split('/')) > 1:

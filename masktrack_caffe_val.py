@@ -10,7 +10,7 @@ import numpy as np
 import argparse
 import caffe
 from dataset_davis_vs import Dataset
-
+import time
 def add_arguments(parser):
     group = parser.add_argument_group(title='Paths Arguments')
     group.add_argument(
@@ -48,16 +48,6 @@ def add_arguments(parser):
             default='val'
             )
     group = parser.add_argument_group(title='Data Argument')
-    group.add_argument(
-            '--online_testing',
-            required=False,
-            action='store_true',
-            default=False,
-            help="""
-                offline testing: use ground truth mask from previous frame as spatial guide
-                online testing: use predicted mask from previous frame as spatial guide
-                default to offline, should be set to offline when there is image summaries
-                """)
     group.add_argument(
             '--adaptive_crop_testing',
             required=False,
@@ -100,14 +90,13 @@ with open(val_path, 'r') as f:
 with open(train_path, 'r') as f:
     train_seq_names = [line.strip() for line in f]
 use_static_guide = True
-online_testing = args.online_testing
 test_imgs_with_guide = []
 train_imgs_with_guide = []
 baseDirImg = os.path.join(baseDir, 'JPEGImages', '480p')
 label_fd = '480p_split' if data_version==2017 else '480p_all'
 baseDirLabel = os.path.join(baseDir, 'Annotations', label_fd)
 result_path = args.result_path #os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSMN')
-guideDirLabel = result_path if online_testing else baseDirLabel
+guideDirLabel = result_path
 for name in val_seq_names:
     test_frames = sorted(os.listdir(os.path.join(baseDirImg, name)))
     label_fds = os.listdir(os.path.join(baseDirLabel, name)) if data_version == 2017 else \
@@ -176,8 +165,10 @@ net = caffe.Net(args.model_proto_path, args.src_model_path, caffe.TEST)
 net.blobs["data"].reshape(batch_size, 4, input_pad_size[1], input_pad_size[0])
 if not os.path.exists(result_path):
     os.makedirs(result_path)
+
 for frame in range(0, dataset.get_test_size(), batch_size):
     guide_images, mask_images, images, image_paths = dataset.next_batch(batch_size, 'test')
+    start = time.time() 
     save_names = [name.split('.')[0] + '.png' for name in image_paths]
     combined_im = np.concatenate((images, mask_images), axis=3)
     combined_im = combined_im.transpose((0,3,1,2))
@@ -191,6 +182,8 @@ for frame in range(0, dataset.get_test_size(), batch_size):
     
     labels = res.argmax(1)[0]
     score = res[0,1,:,:]
+    end = time.time()
+    print(end-start)
     #score = np.array(Image.fromarray(res[0,:,:,1],mode='F').resize(im_size, Image.BILINEAR))
     #labels = np.array(Image.fromarray(labels.astype(np.uint8)).resize(im_size, Image.NEAREST))
     print 'Saving ' + os.path.join(result_path,save_names[0])

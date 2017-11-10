@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image
 import random
 import cv2
+PI = 3.1415926
 #import random
 def get_dilate_structure(r):
     l = 2 * r + 1
@@ -112,6 +113,13 @@ def perturb_mask(mask, center_perturb = 0.1, size_perturb=0.05):
     mask_out[out_start[1]:out_end[1], out_start[0]:out_end[0]] = cropped_mask[src_start[1]:src_end[1], src_start[0]: src_end[0]]
     return mask_out
 
+def rotate_image(image, angle):
+    image_center = tuple(np.array(image.shape[:2])/2)
+    rot_mat = cv2.getRotationMatrix2D(image_center,angle,1.0)
+    angle_r = float(angle) / 180 * PI
+    result = cv2.warpAffine(image, rot_mat, image.shape[:2],flags=cv2.INTER_NEAREST)
+    return result
+
 def adaptive_crop_box(mask, ext_ratio = 0.3):
     bbox = get_mask_bbox(mask, border_pixels=0)
     bbox_size = np.array([bbox[2]-bbox[0]+1, bbox[3]-bbox[1]+1])
@@ -134,27 +142,28 @@ def mask_image(image, label):
     image[label == 0, :] = 0
     return image
 def data_augmentation(im, label, new_size, 
-        data_aug_flip = True, random_crop_ratio = 0):
+        data_aug_flip = True, random_crop_ratio = 0, random_rotate_angle=0):
     #old_size = im.size
     if random_crop_ratio:
+        crop_ratio = random.random() * random_crop_ratio
         crop_pos = random.choice((0,1,2,3))
         crop_points = [0,0,im.size[0],im.size[1]]
         if crop_pos == 0:
-            crop_points[0] = int(random_crop_ratio * im.size[0])
+            crop_points[0] = int(crop_ratio * im.size[0])
         elif crop_pos == 1:
-            crop_points[1] = int(random_crop_ratio * im.size[1])
+            crop_points[1] = int(crop_ratio * im.size[1])
         elif crop_pos == 2:
-            crop_points[2] -= int(random_crop_ratio * im.size[0])
+            crop_points[2] -= int(crop_ratio * im.size[0])
         else:
-            crop_points[3] -= int(random_crop_ratio * im.size[1])
+            crop_points[3] -= int(crop_ratio * im.size[1])
         im = im.crop(crop_points)
         label = label.crop(crop_points)
     im = im.resize(new_size, Image.BILINEAR)
     label = label.resize(new_size, Image.NEAREST)
-    #bbox = (bbox[0] * new_size[0] / float(old_size[0]),
-    #        bbox[1] * new_size[1] / float(old_size[1]),
-    #        bbox[2] * new_size[0] / float(old_size[0]),
-    #        bbox[3] * new_size[0] / float(old_size[1]))
+    if random_rotate_angle:
+        angle = (random.random() - 0.5) * 2 * random_rotate_angle
+        im = Image.fromarray(rotate_image(np.array(im), angle))
+        label = Image.fromarray(rotate_image(np.array(label), angle))
     if data_aug_flip:
         if random.random() > 0.5:
             im = im.transpose(Image.FLIP_LEFT_RIGHT)

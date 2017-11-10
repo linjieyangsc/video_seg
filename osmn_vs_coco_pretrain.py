@@ -41,16 +41,6 @@ def add_arguments(parser):
             nargs='+', type=float,
             required=False,
             default=[0.8, 1, 1.2])
-    group.add_argument(
-            '--random_crop_ratio',
-            required=False,
-            default=0.0,
-            type=float)
-    group.add_argument(
-            '--motion_blur_prob',
-            required=False,
-            default=0.0,
-            type=float)
 print " ".join(sys.argv[:])
 
 parser = argparse.ArgumentParser()
@@ -72,6 +62,8 @@ dataset = Dataset(train_file, val_file, train_path, val_path,
          sp_guide_random_blank=args.spatial_guide_random_blank,
         use_original_mask = args.masktrack, data_aug=True, 
         motion_blur_prob = args.motion_blur_prob,
+        vg_random_rotate_angle = args.vg_random_rotate_angle,
+        vg_random_crop_ratio = args.vg_random_crop_ratio,
         random_crop_ratio = args.random_crop_ratio,
         input_size=args.input_size, data_aug_scales=args.data_aug_scales)
 # Train parameters

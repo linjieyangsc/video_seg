@@ -87,7 +87,7 @@ use_static_guide = args.use_static_guide
 randomize_guide = args.randomize_guide
 test_imgs_with_guide = []
 train_imgs_with_guide = []
-baseDirImg = os.path.join(baseDir, 'JPEGImages', '480p')
+baseDirImg = os.path.join(baseDir, 'JPEGImages', 'Full-Resolution')
 label_fd = '480p_split' if data_version==2017 else '480p_all'
 baseDirLabel = os.path.join(baseDir, 'Annotations', label_fd)
 result_path = args.result_path #os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSMN')

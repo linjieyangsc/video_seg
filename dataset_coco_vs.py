@@ -15,7 +15,9 @@ sys.path.append('../coco/PythonAPI')
 from pycocotools.coco import COCO
 class Dataset:
     def __init__(self, train_anno_file, test_anno_file, train_image_path, test_image_path, visual_guide_mask=True, 
-            use_original_mask = False, motion_blur_prob = 0, random_crop_ratio = 0, input_size = 400, data_aug=False, sp_guide_random_blank=True, data_aug_scales=[0.8, 1.0, 1.2]):
+            use_original_mask = False, motion_blur_prob = 0, random_crop_ratio = 0, 
+            vg_random_rotate_angle = 0, vg_random_crop_ratio = 0,
+            input_size = 400, data_aug=False, sp_guide_random_blank=True, data_aug_scales=[0.8, 1.0, 1.2]):
         """Initialize the Dataset object
         Args:
         train_anno_file: json file for training data
@@ -36,6 +38,8 @@ class Dataset:
         self.sp_guide_random_blank = sp_guide_random_blank
         self.use_original_mask = use_original_mask
         self.random_crop_ratio = random_crop_ratio
+        self.vg_random_rotate_angle = vg_random_rotate_angle
+        self.vg_random_crop_ratio = vg_random_crop_ratio
         self.motion_blur_prob = motion_blur_prob
         self.train_data = COCO(train_anno_file)
         self.test_data = COCO(test_anno_file)
@@ -117,8 +121,10 @@ class Dataset:
                 
                 guide_image = image.crop(anno['bbox'])
                 guide_label = label.crop(anno['bbox'])
-                guide_image = guide_image.resize(self.guide_size, Image.BILINEAR)
-                guide_label = guide_label.resize(self.guide_size, Image.NEAREST)
+                guide_image, guide_label = data_augmentation(guide_image, guide_label,
+                        self.guide_size, data_aug_flip = self.data_aug_flip,
+                        random_crop_ratio = self.vg_random_crop_ratio,
+                        random_rotate_angle = self.vg_random_rotate_angle)
             
                 
                 image, label = data_augmentation(image, label, 
@@ -184,7 +190,7 @@ class Dataset:
                 guide_label = label.crop(anno['bbox'])
                 guide_image = guide_image.resize(self.guide_size, Image.BILINEAR)
                 guide_label = guide_label.resize(self.guide_size, Image.NEAREST)
-                image, label = data_augmentation(image, label, self.size, False)
+                image, label = data_augmentation(image, label, self.size, data_aug_flip = False)
                 image_data = np.array(image, dtype=np.float32)
                 guide_image_data = np.array(guide_image, dtype=np.float32)
                 image_data = to_bgr(image_data)
