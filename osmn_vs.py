@@ -246,8 +246,6 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
 
                       height = tf.shape(net)[1]
                       width = tf.shape(net)[2]
-                      # Without this step, Tensorflow give a 'ValueError'
-                      #net = tf.reshape(net, [-1, height, width, 64])
                       net = slim.conv2d(net, 1, [1, 1],
                                         activation_fn=None,
                                         normalizer_fn=None,
@@ -640,7 +638,41 @@ def train_finetune(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, 
            global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, use_image_summary,
            ckpt_name)
 
+def extract_sp_params(model_params, checkpoint_file, result_path, config=None):
+    
+    if config is None:
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        # config.log_device_placement = True
+        config.allow_soft_placement = True
+    tf.logging.set_verbosity(tf.logging.INFO)
+    batch_size = 1
+    guide_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
+    gb_image = tf.placeholder(tf.float32, [batch_size, None, None, 1])
+    input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
 
+    # Create the cnn
+    with slim.arg_scope(osmn_arg_scope()):
+        net, end_points = osmn([guide_image, gb_image, input_image], model_params, is_training=False)
+    saver = tf.train.Saver([v for v in tf.global_variables() if '-up' not in v.name]) #if '-up' not in v.name and '-cr' not in v.name])
+    if not os.path.exists(result_path):
+        os.makedirs(result_path)
+    with tf.Session(config=config) as sess:
+        sess.run(tf.global_variables_initializer())
+        saver.restore(sess, checkpoint_file)
+        with tf.variable_scope("osmn", reuse=True):
+            for v in tf.model_variables():
+                print v.name
+            sp_variables = []
+            for layer_id in range(3, 6):
+                layer_name = 'modulator_sp/conv%d/weights' % (layer_id)
+                v = tf.get_variable(layer_name)
+                sp_variables.append(v)
+            res = sess.run(sp_variables)
+            for layer_id in range(3):
+                np.save(os.path.join(result_path, 'sp_params_%d' % (layer_id+3)), 
+                        res[layer_id])
+        
 def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, config=None):
     """Test one sequence
     Args:
@@ -667,7 +699,7 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
     with slim.arg_scope(osmn_arg_scope()):
         net, end_points = osmn([guide_image, gb_image, input_image], model_params, is_training=False)
     probabilities = tf.nn.sigmoid(net)
-    mod_params = end_points['osmn/modulator/fc8']
+    #mod_params = end_points['osmn/modulator/fc8']
     global_step = tf.Variable(0, name='global_step', trainable=False)
 
     # Create a saver to load the network
@@ -683,15 +715,15 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
         for frame in range(0, dataset.get_test_size(), batch_size):
             guide_images, gb_images, images, image_paths = dataset.next_batch(batch_size, 'test')
             save_names = [ name.split('.')[0] + '.png' for name in image_paths]
-            res_all = sess.run([probabilities,mod_params], feed_dict={guide_image: guide_images, gb_image:gb_images, input_image: images})
+            res_all = sess.run([probabilities], feed_dict={guide_image: guide_images, gb_image:gb_images, input_image: images})
             res = res_all[0]
-            params = res_all[1]
+            #params = res_all[1]
             if model_params.adaptive_crop_testing:
                 res = dataset.restore_crop(res)
             if model_params.crf_postprocessing:
                 res_np = np.zeros(res.shape[:-1])
                 for i in range(batch_size):
-                    res_np[i] = dataset.crf_processing(dataset.images[i], res[i,:,:,0], soft_label=True)
+                    res_np[i] = dataset.crf_processing(dataset.images[i], (res[i,:,:,0] > 0.5).astype(np.int32))
             else:
                 res_np = res.astype(np.float32)[:, :, :, 0] > 0.5             
             for i in range(min(batch_size, dataset.get_test_size() - frame)):
@@ -705,6 +737,6 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
                 if model_params.save_score:
                     print 'Saving ' + os.path.join(result_path, curr_score_name) + '.npy'
                     np.save(os.path.join(result_path, curr_score_name), res.astype(np.float32)[i,:,:,0])
-                    np.save(os.path.join(result_path, curr_score_name+'_params'), params.astype(np.float32)[i])
+                   # np.save(os.path.join(result_path, curr_score_name+'_params'), params.astype(np.float32)[i])
                 #scipy.misc.imsave(os.path.join(result_path, curr_score_name + '_gb.png'), gb_images[i,:,:,0].astype(np.float32))
                 #scipy.misc.imsave(os.path.join(result_path, curr_score_name + '_guide.png'),guide_images[i])

@@ -139,9 +139,9 @@ class Dataset:
                     gb_image = ndimage.morphology.binary_dilation(gb_image, 
                             structure=self.dilate_structure) * 255
                 elif self.sp_guide_random_blank:
-                    gb_image, _, _ = get_gb_image(label_data, blank_prob=0.1)
+                    gb_image = get_gb_image(label_data, blank_prob=0.1)
                 else:
-                    gb_image, _, _ = get_gb_image(label_data)
+                    gb_image = get_gb_image(label_data)
                 #print 'gb image shape', gb_image.shape
                 #scipy.misc.imsave(os.path.join('test', image_path.split('/')[-1]), gb_image)
                 #scipy.misc.imsave(os.path.join('test', image_path.split('/')[-1][:-4]+'_guide.jpg'), label_data)
@@ -202,7 +202,7 @@ class Dataset:
                     gb_image = ndimage.morphology.binary_dilation(label_data, 
                             structure=self.dilate_structure) * 255
                 else:
-                    gb_image, _, _ = get_gb_image(label_data, center_perturb=0, std_perturb=0, blank_prob=0) 
+                    gb_image = get_gb_image(label_data, center_perturb=0, std_perturb=0, blank_prob=0) 
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
                 # masking
                 if self.visual_guide_mask:

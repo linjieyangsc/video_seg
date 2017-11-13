@@ -14,7 +14,7 @@ def load_model_from_numpy(sess, ckpt_path, src_scope, dst_scope):
         item_name = item.name.split('/')[-2]# "osmn/seg/convN" at beginning, ":0" at last
         item_type = item.name.split('/')[-1].split(':')[0] # weights or bias 
         if not item_name in weights.keys():
-            print item_name, 'not in weights'
+            print item.name, 'not in weights'
             continue
         matched_variables.append(item_name)
                                         

@@ -70,9 +70,7 @@ def compute_robust_moments(binary_image, isotropic=False):
 def get_gb_image(label, center_perturb = 0.2, std_perturb=0.4, blank_prob=0):
     if not np.any(label) or random.random() < blank_prob:
         #return a blank gb image
-        center = np.array([label.shape[1]/2, label.shape[0]/2])
-        std = np.array([label.shape[1]/2, label.shape[0]/2])
-        return np.zeros((label.shape)), center, std
+        return np.zeros((label.shape))
     center, std = compute_robust_moments(label)
     center_p_ratio = np.random.uniform(-center_perturb, center_perturb, 2)
     center_p = center_p_ratio * std + center
@@ -87,7 +85,7 @@ def get_gb_image(label, center_perturb = 0.2, std_perturb=0.4, blank_prob=0):
     D = np.sum((coords - center_p) ** 2 * normalizer, axis=2)
     D = np.exp(-D)
     D = np.clip(D, 0, 1)
-    return D, center_p, std_p
+    return D
 
 def perturb_mask(mask, center_perturb = 0.1, size_perturb=0.05):
     if not np.any(mask):
@@ -120,7 +118,14 @@ def rotate_image(image, angle):
     result = cv2.warpAffine(image, rot_mat, image.shape[:2],flags=cv2.INTER_NEAREST)
     return result
 
-def adaptive_crop_box(mask, ext_ratio = 0.3):
+def get_scaled_box(box, out_size, in_size):
+    box = np.array(box, dtype=np.float32)
+    box[0::2] *= float(out_size[0])/in_size[0]
+    box[1::2] *= float(out_size[1])/in_size[1]
+    box = box.astype(np.int32)
+    return box.tolist()
+
+def adaptive_crop_box(mask, ext_ratio = 0.2):
     bbox = get_mask_bbox(mask, border_pixels=0)
     bbox_size = np.array([bbox[2]-bbox[0]+1, bbox[3]-bbox[1]+1])
     bbox_center = np.array([bbox[0]+bbox[2], bbox[1]+bbox[3]])/2

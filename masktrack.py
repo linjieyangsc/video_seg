@@ -398,13 +398,14 @@ def _train(dataset, model_params, initial_ckpt, fg_ckpt, learning_rate, logs_pat
             saver.restore(sess, last_ckpt_path)
             step = global_step.eval() + 1
         elif fg_ckpt is not None and len(fg_ckpt) > 0:
-            print('Initializing from pre-trained imagenet model...')
             if model_params.use_visual_modulator:
+                print('Initializing visual modulator from pre-trained imagenet model...')
                 load_model(initial_ckpt, 'vgg_16', 'osmn/modulator')(sess)
             if 'vgg_16' in fg_ckpt:
+                print('Initializing segmentation model from pre-trained imagenet model...')
                 load_model(fg_ckpt, 'vgg_16', 'osmn/seg')(sess)
             else:
-                print('Initializing from masktrack model...')
+                print('Initializing segmentation model from masktrack model...')
                 load_model(fg_ckpt, '', 'osmn/seg')(sess)
             step = 1
         else:

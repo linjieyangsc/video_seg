@@ -9,7 +9,7 @@ import sys
 import random
 import pydensecrf.densecrf as dcrf
 from pydensecrf.utils import unary_from_labels, unary_from_softmax, create_pairwise_bilateral, create_pairwise_gaussian
-from util import get_mask_bbox, get_gb_image, to_bgr, mask_image, adaptive_crop_box, get_dilate_structure, perturb_mask
+from util import get_mask_bbox, get_gb_image, to_bgr, mask_image, adaptive_crop_box, get_dilate_structure, perturb_mask, get_scaled_box
 class Dataset:
     def __init__(self, train_list, test_list, 
             sp_guide_random_blank=False, guide_image_mask=True, 
@@ -46,12 +46,12 @@ class Dataset:
         self.sp_guide_random_blank=sp_guide_random_blank
         self.use_original_mask = use_original_mask
         self.crf_preprocessing = crf_preprocessing
-        self.crf_infer_steps = 10
+        self.crf_infer_steps = 5
         self.blank_prob = 0.2
         self.dilate_structure = get_dilate_structure(5)
         np.random.shuffle(self.train_idx)
         self.size = im_size
-        self.crop_size = 480
+        self.crop_size = 300
         self.mean_value = np.array((104, 117, 123))
         self.guide_size = (224, 224)
 
@@ -105,9 +105,9 @@ class Dataset:
                             self.data_augmentation(image, label, ref_label, new_size)
                 bbox = get_mask_bbox(np.array(guide_label))
                 if self.sp_guide_random_blank:
-                    gb_image, _, _ = get_gb_image(np.array(ref_label_new), std_perturb=0.2, blank_prob=self.blank_prob)
+                    gb_image = get_gb_image(np.array(ref_label_new), blank_prob=self.blank_prob)
                 elif not self.use_original_mask:
-                    gb_image, _, _ = get_gb_image(np.array(ref_label_new), std_perturb=0.2)
+                    gb_image = get_gb_image(np.array(ref_label_new))
                 else:
                     gb_image = perturb_mask(np.array(ref_label_new))
                     gb_image = ndimage.morphology.binary_dilation(gb_image, 
@@ -173,26 +173,18 @@ class Dataset:
                         ref_name = os.path.join(*(sample[1].split('/')[-3:-1] + [sample[3].split('/')[-1]]))
                     else:
                         ref_name = os.path.join(sample[1].split('/')[-2], sample[3].split('/')[-1])
-                guide_label = guide_label.resize(guide_image.size, Image.NEAREST)
-                bp = float(guide_label.size[1]) / 480 * 8
-                bbox = get_mask_bbox(np.array(guide_label), border_pixels=bp)
                 if len(self.size) == 2:
                     self.new_size = self.size
                 else:
                     # resize short size of image to self.size[0]
                     resize_ratio = max(float(self.size[0])/image.size[0], float(self.size[0])/image.size[1])
                     self.new_size = (int(resize_ratio * image.size[0]), int(resize_ratio * image.size[1]))
-                image = image.resize(self.new_size, Image.BILINEAR)
-                self.images.append(np.array(image))
                 ref_label = ref_label.resize(self.new_size, Image.NEAREST)
                 ref_label_data = np.array(ref_label) / 255
-                gb_image, _, _ = get_gb_image(ref_label_data, center_perturb=0, std_perturb=0,
-                        blank_prob=0)
-                if self.use_original_mask:
-                    if self.crf_preprocessing:
-                        ref_label_data = self.crf_processing(np.array(image), ref_label_data)
-                    gb_image = ndimage.morphology.binary_dilation(ref_label_data, 
-                            structure=self.dilate_structure) * 255
+                gb_image = get_gb_image(ref_label_data, center_perturb=0, std_perturb=0,
+                            blank_prob=0)
+                image_ref_crf = image.resize(self.new_size, Image.BILINEAR)
+                self.images.append(np.array(image_ref_crf))
                 if self.adaptive_crop_testing:
                     if np.any(ref_label_data):
                         crop_box = adaptive_crop_box(ref_label_data)
@@ -200,22 +192,31 @@ class Dataset:
                         # use the whole image
                         crop_box = (0,0, ref_label_data.shape[1], ref_label_data.shape[0])
                     crop_w, crop_h = crop_box[2] - crop_box[0], crop_box[3] - crop_box[1]
-                    #gb_image = Image.fromarray(gb_image, mode='F')
                     gb_image = gb_image[crop_box[1]: crop_box[3], crop_box[0]: crop_box[2]]
-                    #gb_image = gb_image.crop(crop_box)
-                    image = image.crop(crop_box)
-                    resize_ratio = min(float(self.crop_size) / crop_w, float(self.crop_size) / crop_h)
+                    
+                    scaled_box = get_scaled_box(crop_box, image.size, self.new_size)
+                    image = image.crop(scaled_box)
+                    # resize short size of image to self.crop_size
+                    resize_ratio = max(float(self.crop_size) / crop_w, float(self.crop_size) / crop_h)
                     resize_ratio = max(1, resize_ratio)
                     new_size = (int(resize_ratio * crop_w + 0.5), int(resize_ratio * crop_h + 0.5))
                     self.crop_boxes.append(crop_box)
-                    #gb_image = gb_image.resize(new_size, Image.BILINEAR)
                     gb_image = ndimage.zoom(gb_image, resize_ratio, mode='nearest')
                     
                     image = image.resize(new_size, Image.BILINEAR)
-                    #gb_image = np.array(gb_image, dtype=np.float32)
+                else:
+                    image = image.resize(self.new_size, Image.BILINEAR)
+                if self.use_original_mask:
+                    if self.crf_preprocessing:
+                        ref_label_data = self.crf_processing(np.array(image), ref_label_data)
+                    gb_image = ndimage.morphology.binary_dilation(ref_label_data, 
+                            structure=self.dilate_structure) * 255
                 image_data = np.array(image, dtype=np.float32)
-                    
-                guide_image = guide_image.crop(bbox)
+
+                # process visual guide images
+                bbox = get_mask_bbox(np.array(guide_label))
+                scaled_box = get_scaled_box(bbox, guide_image.size, guide_label.size)
+                guide_image = guide_image.crop(scaled_box)
                 guide_label = guide_label.crop(bbox)
                 guide_image = guide_image.resize(self.guide_size, Image.BILINEAR)
                 guide_label = guide_label.resize(self.guide_size, Image.NEAREST)
@@ -251,7 +252,7 @@ class Dataset:
     def crf_processing(self, image, label, soft_label=False):
         crf = dcrf.DenseCRF2D(image.shape[1], image.shape[0], 2)
         if not soft_label:
-            unary = unary_from_labels(label, 2, gt_prob=0.8, zero_unsure=False)
+            unary = unary_from_labels(label, 2, gt_prob=0.85, zero_unsure=False)
         else:
             if len(label.shape)==2:
                 p_neg = 1.0 - label
@@ -260,7 +261,7 @@ class Dataset:
             unary = unary_from_softmax(label)
         crf.setUnaryEnergy(unary)
         crf.addPairwiseGaussian(sxy=(3,3), compat=3)
-        crf.addPairwiseBilateral(sxy=(70, 70), srgb=(5, 5, 5), rgbim=image, compat=10)
+        crf.addPairwiseBilateral(sxy=(40, 40), srgb=(5, 5, 5), rgbim=image, compat=10)
         crf_out = crf.inference(self.crf_infer_steps)
 
         # Find out the most probable class for each pixel.
