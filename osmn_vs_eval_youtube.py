@@ -42,7 +42,6 @@ baseDir = args.data_path
 val_seq_path = os.path.join(baseDir, 'all.txt')
 with open(val_seq_path) as f:
     val_seq_names = [line.strip() for line in f]
-use_static_guide = args.use_static_guide 
 test_imgs_with_guide = []
 baseDirImg = os.path.join(baseDir, 'Images')
 baseDirLabel = os.path.join(baseDir, 'Labels')
@@ -57,19 +56,12 @@ for name in val_seq_names:
         os.path.join(baseDirLabel, name, test_frames[0][:-4]+'.png'),
             os.path.join(baseDirImg, name, test_frames[1]))]
     
-    if not use_static_guide:
-        # use the guide image predicted from previous frame
-        test_imgs_with_guide += [(os.path.join(baseDirImg, name, prev_frame), 
-            os.path.join(guideDirLabel, name, prev_frame[:-4]+'.png'),
-                os.path.join(baseDirImg, name, frame)) 
-                for prev_frame, frame in zip(test_frames[1:-1], test_frames[2:])]
-    else:
-        # use the static visual guide image and predicted spatial guide image of previous frame
-        test_imgs_with_guide += [(os.path.join(baseDirImg, name, test_frames[0]),
-            os.path.join(baseDirLabel, name, test_frames[0][:-4]+'.png'),
-                os.path.join(guideDirLabel, name, prev_frame[:-4] +'.png'),
-                os.path.join(baseDirImg, name, frame))
-                for prev_frame, frame in zip(test_frames[1:-1], test_frames[2:])]
+    # use the static visual guide image and predicted spatial guide image of previous frame
+    test_imgs_with_guide += [(os.path.join(baseDirImg, name, test_frames[0]),
+        os.path.join(baseDirLabel, name, test_frames[0][:-4]+'.png'),
+            os.path.join(guideDirLabel, name, prev_frame[:-4] +'.png'),
+            os.path.join(baseDirImg, name, frame))
+            for prev_frame, frame in zip(test_frames[1:-1], test_frames[2:])]
                     
 # Define Dataset
 im_size = [640, 360]
@@ -77,8 +69,7 @@ dataset = Dataset([], test_imgs_with_guide,
         im_size = im_size,
         multiclass = False,
         adaptive_crop_testing = args.adaptive_crop_testing,
-        use_original_mask = args.masktrack,
-        crf_preprocessing = args.crf_preprocessing)
+        use_original_mask = args.masktrack)
 if args.masktrack:
     import masktrack as osmn
     

@@ -14,22 +14,7 @@ def add_arguments(parser):
             default='')
     group = parser.add_argument_group(title='Model Arguments')
     group.add_argument(
-            '--mod_last_conv',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
             '--mod_early_conv',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--trimmed_mod',
-            required=False,
-            action = 'store_true',
-            default=False)
-    group.add_argument(
-            '--orig_gb',
             required=False,
             action='store_true',
             default=False)
@@ -45,12 +30,6 @@ def add_arguments(parser):
             action='store_true',
             default=False)
     group.add_argument(
-            '--visual_mod_no_dropout',
-            dest='visual_mod_use_dropout',
-            action='store_false',
-            default=True,
-            required=False)
-    group.add_argument(
             '--no_visual_modulator',
             required=False,
             dest='use_visual_modulator',
@@ -58,11 +37,6 @@ def add_arguments(parser):
             default=True)
     group.add_argument(
             '--fix_bn',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
-            '--loss_normalize',
             required=False,
             action='store_true',
             default=False)
@@ -81,29 +55,16 @@ def add_arguments(parser):
             action='store_false',
             default=True)
     group.add_argument(
+            '--use_original_mask',
+            required=False,
+            action='store_true',
+            default=False)
+    group.add_argument(
             '--masktrack',
             required=False,
             action='store_true',
             default=False)
     group = parser.add_argument_group(title='Data Argument')
-    group.add_argument(
-            '--use_prev_guide',
-            dest='use_static_guide',
-            required=False,
-            action='store_false',
-            default=True,
-            help="""
-                only use the first frame as visual guide or use the previous frame as visual guide
-                """)
-    group.add_argument(
-            '--crf_preprocessing',
-            dest='crf_preprocessing',
-            required=False,
-            action='store_true',
-            default=False,
-            help="""
-                whether or not use crf preprocessing 
-                """)
     group.add_argument(
             '--crf_postprocessing',
             required=False,
@@ -121,17 +82,6 @@ def add_arguments(parser):
                 use adaptive croppping around spatial guide to do testing
                 """)
     group.add_argument(
-            '--no_guide_image_mask',
-            dest='guide_image_mask',
-            required=False,
-            action='store_false',
-            default=True)
-    group.add_argument(
-            '--spatial_guide_random_blank',
-            required=False,
-            action='store_true',
-            default=False)
-    group.add_argument(
             '--random_crop_ratio',
             required=False,
             default=0.0,
@@ -147,9 +97,14 @@ def add_arguments(parser):
             default=0,
             type=int)
     group.add_argument(
-            '--motion_blur_prob',
+            '--sg_center_perturb_ratio',
             required=False,
-            default=0.0,
+            default=0.2,
+            type=float)
+    group.add_argument(
+            '--sg_std_perturb_ratio',
+            required=False,
+            default=0.4,
             type=float)
     group.add_argument(
             '--batch_size',
