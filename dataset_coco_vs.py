@@ -10,14 +10,11 @@ import random
 import cPickle
 import scipy
 import cv2
-from util import to_bgr, mask_image, get_mask_bbox, get_gb_image, data_augmentation, perturb_mask, get_dilate_structure, get_motion_blur_kernel
+from util import to_bgr, mask_image, get_mask_bbox, get_gb_image, data_augmentation, perturb_mask, get_dilate_structure
 sys.path.append('../coco/PythonAPI')
 from pycocotools.coco import COCO
 class Dataset:
-    def __init__(self, train_anno_file, test_anno_file, train_image_path, test_image_path, visual_guide_mask=True, 
-            use_original_mask = False, motion_blur_prob = 0, random_crop_ratio = 0, 
-            vg_random_rotate_angle = 0, vg_random_crop_ratio = 0,
-            input_size = 400, data_aug=False, sp_guide_random_blank=True, data_aug_scales=[0.8, 1.0, 1.2]):
+    def __init__(self, train_anno_file, test_anno_file, train_image_path, test_image_path, args, data_aug=False):
         """Initialize the Dataset object
         Args:
         train_anno_file: json file for training data
@@ -29,18 +26,17 @@ class Dataset:
         # Define types of data augmentation
         self.data_aug = data_aug
         self.data_aug_flip = data_aug
-        self.data_aug_scales = data_aug_scales
+        self.data_aug_scales = args.data_aug_scales
         self.fg_thresh = 0.03
         random.seed(1234)
         self.train_image_path = train_image_path
         self.test_image_path = test_image_path
-        self.visual_guide_mask = visual_guide_mask
-        self.sp_guide_random_blank = sp_guide_random_blank
-        self.use_original_mask = use_original_mask
-        self.random_crop_ratio = random_crop_ratio
-        self.vg_random_rotate_angle = vg_random_rotate_angle
-        self.vg_random_crop_ratio = vg_random_crop_ratio
-        self.motion_blur_prob = motion_blur_prob
+        self.use_original_mask = args.use_original_mask
+        self.random_crop_ratio = args.random_crop_ratio
+        self.vg_random_rotate_angle = args.vg_random_rotate_angle
+        self.vg_random_crop_ratio = args.vg_random_crop_ratio
+        self.sg_center_perturb_ratio = args.sg_center_perturb_ratio
+        self.sg_std_perturb_ratio = args.sg_std_perturb_ratio
         self.train_data = COCO(train_anno_file)
         self.test_data = COCO(test_anno_file)
         if os.path.exists('cache/train_annos.pkl'):
@@ -50,10 +46,11 @@ class Dataset:
             # prefiltering of segmentation instances
             self.train_annos = self.prefilter(self.train_data)
             self.test_annos = self.prefilter(self.test_data)
+            if not os.path.exists('cache'):
+                os.makedirs('cache')
             cPickle.dump(self.train_annos, open('cache/train_annos.pkl', 'wb'), cPickle.HIGHEST_PROTOCOL)
             cPickle.dump(self.test_annos, open('cache/val_annos.pkl', 'wb'), cPickle.HIGHEST_PROTOCOL)
         # Init parameters
-        #self.dilate_structure = ndimage.iterate_structure(ndimage.generate_binary_structure(2, 2), 5).astype(int)
         self.dilate_structure = get_dilate_structure(5)
         self.train_ptr = 0
         self.test_ptr = 0
@@ -61,10 +58,9 @@ class Dataset:
         self.test_size = len(self.test_annos)
         self.train_idx = np.arange(self.train_size) 
         self.test_idx = np.arange(self.test_size)
-        self.size = (input_size,input_size)
+        self.size = args.im_size
         self.mean_value = np.array((104, 117, 123))
         self.guide_size = (224,224)
-        self.motion_kernel_size = 7
         np.random.shuffle(self.train_idx)
     
     def prefilter(self, dataset):
@@ -138,24 +134,15 @@ class Dataset:
                     gb_image = perturb_mask(label_data)
                     gb_image = ndimage.morphology.binary_dilation(gb_image, 
                             structure=self.dilate_structure) * 255
-                elif self.sp_guide_random_blank:
-                    gb_image = get_gb_image(label_data, blank_prob=0.1)
                 else:
-                    gb_image = get_gb_image(label_data)
-                #print 'gb image shape', gb_image.shape
-                #scipy.misc.imsave(os.path.join('test', image_path.split('/')[-1]), gb_image)
-                #scipy.misc.imsave(os.path.join('test', image_path.split('/')[-1][:-4]+'_guide.jpg'), label_data)
-                if random.random() < self.motion_blur_prob:
-                    # get a random motion kernel
-                    kernel = get_motion_blur_kernel(self.motion_kernel_size)
-                    image_data = cv2.filter2D(image_data, -1, kernel)
+                    gb_image = get_gb_image(label_data, center_perturb = self.sg_center_perturb_ratio,
+                            std_perturb = self.sg_std_perturb_ratio)
                 image_data = to_bgr(image_data)
                 guide_image_data = to_bgr(guide_image_data)
                 image_data -= self.mean_value
                 guide_image_data -= self.mean_value
                 # masking
-                if self.visual_guide_mask:
-                    guide_image_data = mask_image(guide_image_data, guide_label_data)
+                guide_image_data = mask_image(guide_image_data, guide_label_data)
                 images.append(image_data)
                 labels.append(label_data)
                 guide_images.append(guide_image_data)
@@ -202,11 +189,10 @@ class Dataset:
                     gb_image = ndimage.morphology.binary_dilation(label_data, 
                             structure=self.dilate_structure) * 255
                 else:
-                    gb_image = get_gb_image(label_data, center_perturb=0, std_perturb=0, blank_prob=0) 
+                    gb_image = get_gb_image(label_data, center_perturb=0, std_perturb=0) 
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
                 # masking
-                if self.visual_guide_mask:
-                    guide_image_data = mask_image(guide_image_data, guide_label_data)
+                guide_image_data = mask_image(guide_image_data, guide_label_data)
                 images.append(image_data)
                 gb_images.append(gb_image)
                 # only need file name for result saving
@@ -219,7 +205,7 @@ class Dataset:
 
             return guide_images, gb_images, images, image_paths
         else:
-            return None, None, None
+            return None, None, None, None
     
 
     def get_train_size(self):
@@ -230,6 +216,3 @@ class Dataset:
 
     def train_img_size(self):
         return self.size
-    def reset_idx(self):
-        self.train_ptr = 0
-        self.test_ptr = 0

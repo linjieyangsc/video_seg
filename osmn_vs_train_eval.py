@@ -61,6 +61,11 @@ def add_arguments(parser):
             default='val'
             )
     group.add_argument(
+            '--im_size',
+            nargs=2, type=int,
+            required = False,
+            default=[854, 480])
+    group.add_argument(
             '--data_aug_scales',
             type=float, nargs='+',
             required=False,
@@ -83,7 +88,6 @@ with open(val_path, 'r') as f:
     val_seq_names = [line.strip() for line in f]
 with open(train_path, 'r') as f:
     train_seq_names = [line.strip() for line in f]
-use_static_guide = args.use_static_guide 
 randomize_guide = args.randomize_guide
 test_imgs_with_guide = []
 train_imgs_with_guide = []
@@ -104,19 +108,12 @@ for name in val_seq_names:
         test_imgs_with_guide += [(os.path.join(baseDirImg, name, '00000.jpg'), 
                 os.path.join(baseDirLabel, name, label_id, '00000.png'),
                 os.path.join(baseDirImg, name, '00001.jpg'))]
-        if not use_static_guide:
-            # use the guide image predicted from previous frame
-            test_imgs_with_guide += [(os.path.join(baseDirImg, name, prev_frame), 
-                os.path.join(guideDirLabel, name, label_id, prev_frame[:-4]+'.png'),
-                    os.path.join(baseDirImg, name, frame)) 
-                    for prev_frame, frame in zip(test_frames[1:-1], test_frames[2:])]
-        else:
-            # use the static visual guide image and predicted spatial guide image of previous frame
-            test_imgs_with_guide += [(os.path.join(baseDirImg, name, '00000.jpg'),
-                    os.path.join(baseDirLabel, name, label_id, '00000.png'),
-                    os.path.join(guideDirLabel, name, label_id, prev_frame[:-4] +'.png'),
-                    os.path.join(baseDirImg, name, frame))
-                    for prev_frame, frame in zip(test_frames[1:-1], test_frames[2:])]
+        # use the static visual guide image and predicted spatial guide image of previous frame
+        test_imgs_with_guide += [(os.path.join(baseDirImg, name, '00000.jpg'),
+                os.path.join(baseDirLabel, name, label_id, '00000.png'),
+                os.path.join(guideDirLabel, name, label_id, prev_frame[:-4] +'.png'),
+                os.path.join(baseDirImg, name, frame))
+                for prev_frame, frame in zip(test_frames[1:-1], test_frames[2:])]
                     
 for name in train_seq_names:
     train_frames = sorted(os.listdir(os.path.join(baseDirImg, name)))
@@ -124,25 +121,20 @@ for name in train_seq_names:
             [os.path.join(baseDirLabel, name)]
     print name
     for label_id in label_fds:
-        if not use_static_guide:
-            # use the ground truth guide image from previous frame
-            train_imgs_with_guide += [(os.path.join(baseDirImg, name, prev_frame),
-                os.path.join(baseDirLabel, name, label_id, prev_frame[:-4] + '.png'),
-                    os.path.join(baseDirImg, name, frame),
-                    os.path.join(baseDirLabel, name, label_id, frame[:-4] + '.png')) 
-                    for prev_frame, frame in zip(train_frames[:-1], train_frames[1:])]
-        elif randomize_guide:
+        if randomize_guide:
             #get valid image ids with objects
             valid_label_idx = []
+            nonblank_label_idx = []
             for frame in train_frames:
                 label = Image.open(os.path.join(baseDirLabel, name, label_id, frame[:-4] + '.png'))
                 label_data = np.array(label) > 0
                 bbox = get_mask_bbox(label_data, border_pixels=0)
+                if np.sum(label_data) > 0:
+                    nonblank_label_idx.append(frame)
                 if np.sum(label_data) > label_data.size * args.label_valid_ratio and \
                         np.sum(label_data) > (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]) * args.bbox_valid_ratio:
                     valid_label_idx.append(frame[:-4])
-            print 'number of valid labels:%d\%d' % (len(valid_label_idx), len(train_frames))
-            sys.stdout.flush()
+            train_frames = nonblank_label_idx
             if len(valid_label_idx) > 0:
                 # randomly select guide image for each frame
                 random_guide_idx = np.random.randint(0, len(valid_label_idx),(len(train_frames)))
@@ -168,15 +160,8 @@ for name in train_seq_names:
                 for prev_frame, frame in zip(train_frames[:-1], train_frames[1:])]
 
 # Define Dataset
-multiclass = (data_version == 2017)
-dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide, 
-        multiclass = multiclass,
-        adaptive_crop_testing = args.adaptive_crop_testing,
-        use_original_mask = args.masktrack,
-        crf_preprocessing = args.crf_preprocessing,
-        sp_guide_random_blank=args.spatial_guide_random_blank, 
-        guide_image_mask=args.guide_image_mask, 
-        data_aug=True, data_aug_scales=args.data_aug_scales)
+dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide, args,
+        data_aug=True)
 if args.masktrack:
     import masktrack as osmn
     

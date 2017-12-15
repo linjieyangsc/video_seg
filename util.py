@@ -34,7 +34,7 @@ def get_motion_blur_kernel(size):
     kernel_motion_blur = kernel_motion_blur / size
     return kernel_motion_blur
 
-def get_mask_bbox(m, border_pixels=8):
+def get_mask_bbox(m, border_pixels=0):
     if not np.any(m):
         # return a default bbox
         return (0, 0, m.shape[1], m.shape[0])
@@ -87,7 +87,7 @@ def get_gb_image(label, center_perturb = 0.2, std_perturb=0.4, blank_prob=0):
     D = np.clip(D, 0, 1)
     return D
 
-def perturb_mask(mask, center_perturb = 0.1, size_perturb=0.05):
+def perturb_mask(mask, center_perturb = 0.2, size_perturb=0.2):
     if not np.any(mask):
         return np.zeros((mask.shape))
     xmin, ymin, xmax, ymax = get_mask_bbox(mask, border_pixels=0)

@@ -11,13 +11,8 @@ import pydensecrf.densecrf as dcrf
 from pydensecrf.utils import unary_from_labels, unary_from_softmax, create_pairwise_bilateral, create_pairwise_gaussian
 from util import get_mask_bbox, get_gb_image, to_bgr, mask_image, adaptive_crop_box, get_dilate_structure, perturb_mask, get_scaled_box
 class Dataset:
-    def __init__(self, train_list, test_list, 
-            sp_guide_random_blank=False, guide_image_mask=True, 
-            adaptive_crop_testing = False,
-            use_original_mask = False,
-            crf_preprocessing = False,
-            im_size = (854, 480),
-            data_aug=False, multiclass=True, data_aug_scales=[0.5, 0.8, 1]):
+    def __init__(self, train_list, test_list, args,
+            data_aug=False):
         """Initialize the Dataset object
         Args:
         train_list: TXT file or list with the paths of the images to use for training (Images must be between 0 and 255)
@@ -25,32 +20,31 @@ class Dataset:
         Returns:
         """
         # Define types of data augmentation
+        random.seed(1234)
         self.data_aug = data_aug
         self.data_aug_flip = data_aug
-        self.data_aug_scales = data_aug_scales
-        random.seed(1234)
-        self.guide_image_mask = guide_image_mask
-        self.multiclass = multiclass
-        self.adaptive_crop_testing = adaptive_crop_testing
-        self.use_original_mask = False
-        self.use_visual_guide = False
-        # Init parameters
+        self.data_aug_scales = args.data_aug_scales
+        self.use_original_mask = args.use_original_mask
+        self.random_crop_ratio = args.random_crop_ratio
+        self.vg_random_rotate_angle = args.vg_random_rotate_angle
+        self.vg_random_crop_ratio = args.vg_random_crop_ratio
+        self.sg_center_perturb_ratio = args.sg_center_perturb_ratio
+        self.sg_std_perturb_ratio = args.sg_std_perturb_ratio
+        self.multiclass = args.data_version == 2017
+        self.adaptive_crop_testing = args.adaptive_crop_testing
         self.train_list = train_list
         self.test_list = test_list
         self.train_ptr = 0
         self.test_ptr = 0
         self.train_size = len(train_list)
+        print '#training samples', self.train_size
         self.test_size = len(test_list)
         self.train_idx = np.arange(self.train_size)
         self.test_idx = np.arange(self.test_size)
-        self.sp_guide_random_blank=sp_guide_random_blank
-        self.use_original_mask = use_original_mask
-        self.crf_preprocessing = crf_preprocessing
         self.crf_infer_steps = 5
-        self.blank_prob = 0.2
         self.dilate_structure = get_dilate_structure(5)
         np.random.shuffle(self.train_idx)
-        self.size = im_size
+        self.size = args.im_size
         self.crop_size = 300
         self.mean_value = np.array((104, 117, 123))
         self.guide_size = (224, 224)
@@ -68,7 +62,7 @@ class Dataset:
         path: List of image paths
         """
         if phase == 'train':
-            if self.train_ptr + batch_size < self.train_size:
+            if self.train_ptr + batch_size <= self.train_size:
                 idx = np.array(self.train_idx[self.train_ptr:self.train_ptr + batch_size])
                 self.train_ptr += batch_size
             else:
@@ -104,10 +98,9 @@ class Dataset:
                     image, label, ref_label_new = \
                             self.data_augmentation(image, label, ref_label, new_size)
                 bbox = get_mask_bbox(np.array(guide_label))
-                if self.sp_guide_random_blank:
-                    gb_image = get_gb_image(np.array(ref_label_new), blank_prob=self.blank_prob)
-                elif not self.use_original_mask:
-                    gb_image = get_gb_image(np.array(ref_label_new))
+                if not self.use_original_mask:
+                    gb_image = get_gb_image(np.array(ref_label_new),center_perturb=self.sg_center_perturb_ratio, 
+                            std_perturb=self.sg_std_perturb_ratio)
                 else:
                     gb_image = perturb_mask(np.array(ref_label_new))
                     gb_image = ndimage.morphology.binary_dilation(gb_image, 
@@ -119,17 +112,13 @@ class Dataset:
                 guide_label = guide_label.resize(self.guide_size, Image.NEAREST)
                 image_data = np.array(image, dtype=np.float32)
                 label_data = np.array(label, dtype=np.uint8) > 0 
-                #label_im = Image.fromarray((label_data).astype(np.uint8))
-                #print 'save test image'
-                #label_im.save('test/'+sample[3].split('/')[-1])
                 guide_image_data = np.array(guide_image, dtype=np.float32)
                 guide_image_data = to_bgr(guide_image_data)
                 image_data = to_bgr(image_data)
                 guide_image_data -= self.mean_value
                 image_data -= self.mean_value
                 guide_label_data = np.array(guide_label,dtype=np.uint8)
-                if self.guide_image_mask:
-                    guide_image_data = mask_image(guide_image_data, guide_label_data)
+                guide_image_data = mask_image(guide_image_data, guide_label_data)
                 guide_images.append(guide_image_data)
                 gb_images.append(gb_image)
                 images.append(image_data)
@@ -181,8 +170,7 @@ class Dataset:
                     self.new_size = (int(resize_ratio * image.size[0]), int(resize_ratio * image.size[1]))
                 ref_label = ref_label.resize(self.new_size, Image.NEAREST)
                 ref_label_data = np.array(ref_label) / 255
-                gb_image = get_gb_image(ref_label_data, center_perturb=0, std_perturb=0,
-                            blank_prob=0)
+                gb_image = get_gb_image(ref_label_data, center_perturb=0, std_perturb=0)
                 image_ref_crf = image.resize(self.new_size, Image.BILINEAR)
                 self.images.append(np.array(image_ref_crf))
                 if self.adaptive_crop_testing:
@@ -207,8 +195,6 @@ class Dataset:
                 else:
                     image = image.resize(self.new_size, Image.BILINEAR)
                 if self.use_original_mask:
-                    if self.crf_preprocessing:
-                        ref_label_data = self.crf_processing(np.array(image), ref_label_data)
                     gb_image = ndimage.morphology.binary_dilation(ref_label_data, 
                             structure=self.dilate_structure) * 255
                 image_data = np.array(image, dtype=np.float32)
@@ -226,8 +212,7 @@ class Dataset:
                 guide_image_data -= self.mean_value
                 image_data -= self.mean_value
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
-                if self.guide_image_mask:
-                    guide_image_data = mask_image(guide_image_data, guide_label_data)
+                guide_image_data = mask_image(guide_image_data, guide_label_data)
                 guide_images.append(guide_image_data)
                 gb_images.append(gb_image)
                 images.append(image_data)
@@ -249,10 +234,11 @@ class Dataset:
                 label = label.transpose(Image.FLIP_LEFT_RIGHT)
                 guide_label = guide_label.transpose(Image.FLIP_LEFT_RIGHT)
         return im, label, guide_label
+    
     def crf_processing(self, image, label, soft_label=False):
         crf = dcrf.DenseCRF2D(image.shape[1], image.shape[0], 2)
         if not soft_label:
-            unary = unary_from_labels(label, 2, gt_prob=0.85, zero_unsure=False)
+            unary = unary_from_labels(label, 2, gt_prob=0.9, zero_unsure=False)
         else:
             if len(label.shape)==2:
                 p_neg = 1.0 - label
@@ -267,6 +253,7 @@ class Dataset:
         # Find out the most probable class for each pixel.
         return np.argmax(crf_out, axis=0).reshape((image.shape[0], image.shape[1]))
 
+    # restore the score map when using adaptive cropping test
     def restore_crop(self, res):
         n_samples = res.shape[0]
         channels = res.shape[3]

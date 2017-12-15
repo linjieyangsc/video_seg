@@ -32,10 +32,10 @@ def add_arguments(parser):
 
 
     group.add_argument(
-            '--input_size',
-            type=int,
+            '--im_size',
+            nargs=2, type=int,
             required = False,
-            default=400)
+            default=[400, 400])
     group.add_argument(
             '--data_aug_scales',
             nargs='+', type=float,
@@ -58,14 +58,7 @@ sys.stdout.flush()
 if args.masktrack:
     import masktrack as osmn
 # Define Dataset
-dataset = Dataset(train_file, val_file, train_path, val_path, 
-         sp_guide_random_blank=args.spatial_guide_random_blank,
-        use_original_mask = args.masktrack, data_aug=True, 
-        motion_blur_prob = args.motion_blur_prob,
-        vg_random_rotate_angle = args.vg_random_rotate_angle,
-        vg_random_crop_ratio = args.vg_random_crop_ratio,
-        random_crop_ratio = args.random_crop_ratio,
-        input_size=args.input_size, data_aug_scales=args.data_aug_scales)
+dataset = Dataset(train_file, val_file, train_path, val_path, args, data_aug=True)
 # Train parameters
 logs_path = args.model_save_path
 max_training_iters = args.training_iters
