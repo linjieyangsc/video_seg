@@ -40,11 +40,16 @@ def add_arguments(parser):
             required=False,
             action='store_true',
             default=False)
+    group.add_argument(
+            '--concat_last_three',
+            required=False,
+            action='store_true',
+            default=False)
     ## masktrack params
     # set aligned size to 865, 481 for testing MaskTrack on davis
     group.add_argument(
             '--aligned_size',
-            type=int, nargs='+',
+            type=int, nargs=2,
             required=False,
             default=None)
 
@@ -55,15 +60,20 @@ def add_arguments(parser):
             action='store_false',
             default=True)
     group.add_argument(
+            '--bbox_sup',
+            required=False,
+            action='store_true',
+            default=False)
+    group.add_argument(
             '--use_original_mask',
             required=False,
             action='store_true',
             default=False)
     group.add_argument(
-            '--masktrack',
+            '--model_type',
             required=False,
-            action='store_true',
-            default=False)
+            type=str,
+            default="osvos")
     group = parser.add_argument_group(title='Data Argument')
     group.add_argument(
             '--crf_postprocessing',
@@ -86,6 +96,11 @@ def add_arguments(parser):
             required=False,
             default=0.0,
             type=float)
+    group.add_argument(
+            '--vg_color_aug',
+            required=False,
+            action ='store_true',
+            default=False)
     group.add_argument(
             '--vg_random_crop_ratio',
             required=False,
@@ -148,7 +163,7 @@ def add_arguments(parser):
             action='store_true',
             default=False,
             help="""
-                add valdiation image results to tensorboard
+                add ongoing image results to tensorboard
                 """)
     group.add_argument(
             '--only_testing',

@@ -222,7 +222,10 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
                         side_4_f = crop_features(side_4_f, im_size)
                         side_5_f = slim.convolution2d_transpose(side_5, 16, 32, 16, scope='score-multi5-up')
                         side_5_f = crop_features(side_5_f, im_size)
-                    concat_side = tf.concat([side_2_f, side_3_f, side_4_f, side_5_f], axis=3)
+                    if model_params.concat_last_three:
+                        concat_side = tf.concat([side_3_f, side_4_f, side_5_f], axis=3)
+                    else:
+                        concat_side = tf.concat([side_2_f, side_3_f, side_4_f, side_5_f], axis=3)
                     with slim.arg_scope([slim.conv2d],
                                         trainable=True, normalizer_fn=None):
                         net = slim.conv2d(concat_side, 1, [1, 1], scope='upscore-fuse')
@@ -230,6 +233,180 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
         end_points = slim.utils.convert_collection_to_dict(end_points_collection)
         return net, end_points
 
+def osmn_deeplab(inputs, model_params, scope='osmn', is_training=False):
+    """Defines the OSMN
+    Args:
+    inputs: Tensorflow placeholder that contains the input image and the first frame masked forground
+    scope: Scope name for the network
+    Returns:
+    net: Output Tensor of the network
+    end_points: Dictionary with all Tensors of the network
+    """
+    guide_im_size = tf.shape(inputs[0])
+    im_size = tf.shape(inputs[2])
+    mod_early_conv = model_params.mod_early_conv
+    spatial_mod_use_bn = model_params.spatial_mod_use_bn
+    use_visual_modulator = model_params.use_visual_modulator
+    use_spatial_modulator = model_params.use_spatial_modulator
+    batch_norm_params = {
+                    'decay': 0.99,
+                    'scale': True,
+                    'epsilon': 0.001,
+                    'updates_collections': None,
+                    'is_training': not model_params.fix_bn and is_training
+                    }
+    n_modulator_param = (512 * 6 + 256 * 3) + mod_early_conv * 384
+    num_mod_layers = [2,2,3,3,3]
+    aligned_size = model_params.aligned_size
+    train_seg = model_params.train_seg
+
+    with tf.variable_scope(scope, [inputs]) as sc:
+        end_points_collection = sc.name + '_end_points'
+        modulator_params = None
+        if use_visual_modulator:
+
+            with tf.variable_scope('modulator'):
+                # Collect outputs of all intermediate layers.
+                with slim.arg_scope([slim.conv2d],
+                                    padding='SAME',
+                                    outputs_collections=end_points_collection):
+                  with slim.arg_scope([slim.max_pool2d], padding='SAME'):
+                    net = slim.repeat(inputs[0], 2, slim.conv2d, 64, [3, 3], scope='conv1')
+                    net = slim.max_pool2d(net, [2, 2], scope='pool1')
+                    net_2 = slim.repeat(net, 2, slim.conv2d, 128, [3, 3], scope='conv2')
+                    net = slim.max_pool2d(net_2, [2, 2], scope='pool2')
+                    net_3 = slim.repeat(net, 3, slim.conv2d, 256, [3, 3], scope='conv3')
+                    net = slim.max_pool2d(net_3, [2, 2], scope='pool3')
+                    net_4 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
+                    net = slim.max_pool2d(net_4, [2, 2], scope='pool4')
+                    net_5 = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
+                    net = slim.max_pool2d(net_5, [2, 2], scope='pool5')
+                    net = slim.conv2d(net, 4096, [7, 7], padding='VALID', scope='fc6')
+                    net = slim.dropout(net, 0.5, is_training=is_training, scope='dropout6')
+                    net = slim.conv2d(net, 4096, [1, 1], scope='fc7')
+                    net = slim.dropout(net, 0.5, is_training=is_training, scope='dropout7')
+                    #with slim.arg_scope([slim.fully_connected],
+                    #        activation_fn = tf.nn.sigmoid, biases_initializer=tf.constant_initializer(5)):
+                    modulator_params = slim.conv2d(net, n_modulator_param, [1, 1],
+                            weights_initializer=tf.zeros_initializer(),  
+                            biases_initializer=tf.ones_initializer(),
+                            activation_fn=None,normalizer_fn=None,scope='fc8')
+                   # modulator_params = slim.fully_connected(net, n_modulator_param, scope='fc_pred')
+                    modulator_params = tf.squeeze(modulator_params, [1,2])
+        # index to mark the current position of the modulation params
+        visual_mod_id = 0
+        with tf.variable_scope('modulator_sp'):
+            if spatial_mod_use_bn:
+                with slim.arg_scope([slim.conv2d],
+                                      activation_fn=tf.nn.relu,
+                                      normalizer_fn=slim.batch_norm,
+                                      normalizer_params=batch_norm_params,
+                                      padding='SAME',
+                                      outputs_collections=end_points_collection) as bn_arg_sc:
+                    pass
+            else:
+                with slim.arg_scope([slim.conv2d],
+                                    activation_fn=tf.nn.relu) as bn_arg_sc:
+                    pass
+            with slim.arg_scope(bn_arg_sc):
+                if not use_spatial_modulator:
+                    conv1_att = None
+                    conv2_att = None
+                    conv3_att = None
+                    conv4_att = None
+                    conv5_att = None
+                else:
+                    ds_mask = slim.avg_pool2d(inputs[1], [2, 2], scope='pool1')
+                    if mod_early_conv:
+                        conv1_att = slim.conv2d(inputs[1], 64 * num_mod_layers[0], [1,1], scope='conv1')
+                        conv2_att = slim.conv2d(ds_mask, 128 * num_mod_layers[1], [1,1], scope='conv2')
+                    else:
+                        conv1_att = None
+                        conv2_att = None
+                    ds_mask = slim.avg_pool2d(ds_mask, [2,2], scope='pool2')
+                    conv3_att = slim.conv2d(ds_mask, 256 * num_mod_layers[2], [1,1], scope='conv3')
+                    ds_mask = slim.avg_pool2d(ds_mask, [2, 2], scope = 'pool3')
+                    conv4_att = slim.conv2d(ds_mask, 512 * num_mod_layers[3], [1,1], scope='conv4')
+                    conv5_att = slim.conv2d(ds_mask, 512 * num_mod_layers[4], [1,1], scope='conv5')
+        with tf.variable_scope('seg'):
+            if aligned_size:
+                image = padding_image(inputs[1], aligned_size)
+            else:
+                image = inputs[1]
+            # Collect outputs of all intermediate layers.
+            with slim.arg_scope([slim.conv2d],
+                                padding='SAME', trainable=train_seg,
+                                outputs_collections=end_points_collection):
+              with slim.arg_scope([slim.max_pool2d], padding='SAME'):
+                net_1, visual_mod_id = modulated_conv_block(inputs[2], 2, 64,
+                        scope_id = 1, visual_mod_id = visual_mod_id,
+                        visual_modulation_params = modulator_params,
+                        spatial_modulation_params = conv1_att,
+                        visual_modulation = use_visual_modulator and mod_early_conv,
+                        spatial_modulation = use_spatial_modulator and mod_early_conv)
+
+                net_2 = slim.max_pool2d(net_1, [2, 2], scope='pool1')
+                net_2, visual_mod_id = modulated_conv_block(net_2, 2, 128,
+                        scope_id = 2, visual_mod_id = visual_mod_id,
+                        visual_modulation_params = modulator_params,
+                        spatial_modulation_params = conv2_att,
+                        visual_modulation = use_visual_modulator and mod_early_conv,
+                        spatial_modulation = use_spatial_modulator and mod_early_conv)
+
+                net_3 = slim.max_pool2d(net_2, [2, 2], scope='pool2')
+                net_3, visual_mod_id = modulated_conv_block(net_3, 3, 256,
+                        scope_id = 3, visual_mod_id = visual_mod_id,
+                        visual_modulation_params = modulator_params,
+                        spatial_modulation_params = conv3_att,
+                        visual_modulation = use_visual_modulator, 
+                        spatial_modulation = use_spatial_modulator)
+                net_4 = slim.max_pool2d(net_3, [2, 2], scope='pool3')
+                net_4, visual_mod_id = modulated_conv_block(net_4, 3, 512,
+                        scope_id = 4, visual_mod_id = visual_mod_id,
+                        visual_modulation_params = modulator_params,
+                        spatial_modulation_params = conv4_att,
+                        visual_modulation = use_visual_modulator, 
+                        spatial_modulation = use_spatial_modulator)
+                net_5 = slim.max_pool2d(net_4, [2, 2], stride=1, scope='pool4')
+                net_5, visual_mod_id = modulated_conv_block(net_5, 3, 512,
+                        scope_id = 5, visual_mod_id = visual_mod_id,
+                        visual_modulation_params = modulator_params,
+                        spatial_modulation_params = conv5_att,
+                        visual_modulation = use_visual_modulator,
+                        spatial_modulation = use_spatial_modulator)
+                pool5 = slim.max_pool2d(net_5, [3, 3], stride=1, scope='pool5')
+                ## hole = 6
+                fc6_1 = slim.conv2d(pool5, 1024, [3, 3], rate=6, scope='fc6_1')
+                fc6_1 = slim.dropout(fc6_1, 0.5, is_training=is_training, scope='drop6_1')
+                fc7_1 = slim.conv2d(fc6_1, 1024, [1,1], scope='fc7_1')
+                fc7_1 = slim.dropout(fc7_1, 0.5, is_training=is_training, scope='drop7_1')
+                fc8_voc12_1 = slim.conv2d(fc7_1, 1, [1,1], activation_fn=None, scope='fc8_voc12_1')
+                ## hole = 12
+                fc6_2 = slim.conv2d(pool5, 1024, [3,3], rate=12, scope='fc6_2')
+                fc6_2 = slim.dropout(fc6_2, 0.5, is_training=is_training, scope='drop6_2')
+                fc7_2 = slim.conv2d(fc6_2, 1024, [1,1], scope='fc7_2')
+                fc7_2 = slim.dropout(fc7_2, 0.5, is_training=is_training, scope='drop7_2')
+                fc8_voc12_2 = slim.conv2d(fc7_2, 1, [1,1], activation_fn=None, scope='fc8_voc12_2')
+                ## hole = 18
+                fc6_3 = slim.conv2d(pool5, 1024, [3,3], rate=18, scope='fc6_3')
+                fc6_3 = slim.dropout(fc6_3, 0.5, is_training=is_training, scope='drop6_3')
+                fc7_3 = slim.conv2d(fc6_3, 1024, [1,1], scope='fc7_3')
+                fc7_3 = slim.dropout(fc7_3, 0.5, is_training=is_training, scope='drop7_3')
+                fc8_voc12_3 = slim.conv2d(fc7_3, 1, [1,1], activation_fn=None, scope='fc8_voc12_3')
+                ## hole = 24
+                fc6_4 = slim.conv2d(pool5, 1024, [3,3], rate=24, scope='fc6_4')
+                fc6_4 = slim.dropout(fc6_4, 0.5, is_training=is_training, scope='drop6_4')
+                fc7_4 = slim.conv2d(fc6_4, 1024, [1,1], scope='fc7_4')
+                fc7_4 = slim.dropout(fc7_4, 0.5, is_training=is_training, scope='drop7_4')
+                fc8_voc12_4 = slim.conv2d(fc7_4, 1, [1,1], activation_fn=None, scope='fc8_voc12_4')
+                fc8_voc12 = fc8_voc12_1 + fc8_voc12_2 + fc8_voc12_3 + fc8_voc12_4
+                with slim.arg_scope([slim.conv2d_transpose],
+                        activation_fn=None, biases_initializer=None, padding='VALID',
+                        trainable=False):
+                    score_full = slim.conv2d_transpose(fc8_voc12, 1, 16, 8, scope='score-up')
+                net = crop_features(score_full, im_size)
+        end_points = slim.utils.convert_collection_to_dict(end_points_collection)
+        return net, end_points
 
 def upsample_filt(size):
     factor = (size + 1) // 2
@@ -250,11 +427,10 @@ def interp_surgery(variables):
             h, w, k, m = v.get_shape()
             tmp = np.zeros((m, k, h, w))
             if m != k:
-                print 'input + output channels need to be the same'
-                raise
+                raise Exception('input + output channels need to be the same')
+                
             if h != w:
-                print 'filters need to be square'
-                raise
+                raise Exception('filters need to be square')
             up_filter = upsample_filt(int(h))
             tmp[range(m), range(k), :, :] = up_filter
             interp_tensors.append(tf.assign(v, tmp.transpose((2, 3, 1, 0)), validate_shape=True, use_locking=True))
@@ -304,6 +480,12 @@ def binary_seg_summary(images, predictions, masks, gts):
     results = tf.cast(results, tf.uint8)
     return tf.summary.image('prediction_images', results, batch_size)
 
+def visual_guide_summary(images):
+    unnormalized_images = images + np.array((104, 117, 123))
+    batch_size = images.get_shape().as_list()[0]
+    results = tf.cast(unnormalized_images, tf.uint8)
+    return tf.summary.image('visual guides', results, batch_size)
+
 def train_finetune(dataset, model_params, initial_ckpt, seg_ckpt, learning_rate, logs_path, max_training_iters, save_step, display_step,
            global_step, iter_mean_grad=1, batch_size=1, resume_training=False, config=None, 
            use_image_summary=True, ckpt_name="osmn"):
@@ -343,8 +525,15 @@ def train_finetune(dataset, model_params, initial_ckpt, seg_ckpt, learning_rate,
     input_label = tf.placeholder(tf.float32, [batch_size, None, None, 1])
 
     # Create the network
+    if model_params.model_type == 'osvos':
+        model_func = osmn
+    elif model_params.model_type == 'deeplab':
+        model_func = osmn_deeplab
+    else:
+        raise Exception("Invalid model type!")
+
     with slim.arg_scope(osmn_arg_scope()):
-        net, end_points = osmn([guide_image, gb_image, input_image], model_params, is_training=True)
+        net, end_points = model_func([guide_image, gb_image, input_image], model_params, is_training=True)
 
 
     # Define loss
@@ -386,7 +575,7 @@ def train_finetune(dataset, model_params, initial_ckpt, seg_ckpt, learning_rate,
     if use_image_summary:
         probabilities = tf.nn.sigmoid(net)
         img_summary = binary_seg_summary(input_image, probabilities, gb_image, input_label)
-    
+        vg_summary = visual_guide_summary(guide_image)
     # Initialize variables
     init = tf.global_variables_initializer()
 
@@ -413,8 +602,8 @@ def train_finetune(dataset, model_params, initial_ckpt, seg_ckpt, learning_rate,
             if 'vgg_16' in seg_ckpt:
                 load_model(seg_ckpt, 'vgg_16', 'osmn/seg')(sess)
             else:
-                print('Initializing from foreground model...')
-                load_model(seg_ckpt, 'osvos', 'osmn/seg')(sess)
+                print('Initializing from segmentation model...')
+                load_model(seg_ckpt, model_params.model_type, 'osmn/seg')(sess)
             step = 1
         else:
             print('Initializing from pre-trained coco model...')
@@ -444,9 +633,10 @@ def train_finetune(dataset, model_params, initial_ckpt, seg_ckpt, learning_rate,
             if step % display_step == 0:
                 if use_image_summary:
                     #test_g_image, test_gb_image, test_image, _ = dataset.next_batch(batch_size, 'test')
-                    curr_output = sess.run(img_summary, feed_dict={guide_image:batch_g_image, gb_image:batch_gb_image,
+                    curr_img_summary = sess.run([img_summary, vg_summary], feed_dict={guide_image:batch_g_image, gb_image:batch_gb_image,
                         input_image: batch_image, input_label: batch_label})
-                    summary_writer.add_summary(curr_output, step)
+                    for s in curr_img_summary:
+                        summary_writer.add_summary(s, step)
                 print >> sys.stderr, "{} Iter {}: Training Loss = {:.4f}".format(datetime.now(), step, batch_loss)
 
             # Save a checkpoint
@@ -521,8 +711,14 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
     input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
 
     # Create the cnn
+    if model_params.model_type == 'osvos':
+        model_func = osmn
+    elif model_params.model_type == 'deeplab':
+        model_func = osmn_deeplab
+    else:
+        raise Exception("Invalid model type!")
     with slim.arg_scope(osmn_arg_scope()):
-        net, end_points = osmn([guide_image, gb_image, input_image], model_params, is_training=False)
+        net, end_points = model_func([guide_image, gb_image, input_image], model_params, is_training=False)
     probabilities = tf.nn.sigmoid(net)
     #mod_params = end_points['osmn/modulator/fc8']
     global_step = tf.Variable(0, name='global_step', trainable=False)

@@ -162,9 +162,14 @@ for name in train_seq_names:
 # Define Dataset
 dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide, args,
         data_aug=True)
-if args.masktrack:
+if args.model_type == 'masktrack':
     import masktrack as osmn
-    
+elif args.model_type == 'osvos':
+    import osmn_vs as osmn
+elif args.model_type == 'deeplab':
+    import osmn_deeplab as osmn
+else:
+    raise Exception("model type invalid")
 ## default config
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True

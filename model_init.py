@@ -35,9 +35,20 @@ def load_model(ckpt_path, src_scope, dst_scope):
         reader = tf.train.NewCheckpointReader(ckpt_path)
         var_to_shape_map = reader.get_variable_to_shape_map()
         vars_corresp = dict()
-        
         for v in var_to_shape_map:
-            corr_var = slim.get_model_variables(v.replace(src_scope, dst_scope))
+            v_name = v.split('/') 
+            # deeplab model is a special case
+            if len(v_name[-1]) == 1:
+                if v_name[-1] == 'b':
+                    v_new = v + 'iases'
+                elif v_name[-1] == 'w':
+                    v_new = v + 'eights'
+                if v_name[0].startswith('conv'):
+                    v_new = 'deeplab/' + v_name[0][:-2] + '/' + v_new
+            else:
+                v_new = v
+            print v_new
+            corr_var = slim.get_model_variables(v_new.replace(src_scope, dst_scope))
             if len(corr_var) > 0 and var_to_shape_map[v] == corr_var[0].get_shape().as_list():
                 vars_corresp[v] = corr_var[0]
         print 'matched variables from ckpt', ckpt_path

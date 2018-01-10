@@ -55,8 +55,10 @@ train_file = os.path.join(baseDir, 'annotations/instances_train2017.json')
 val_file = os.path.join(baseDir, 'annotations/instances_val2017.json')
 print args
 sys.stdout.flush()
-if args.masktrack:
+if args.model_type == 'masktrack':
     import masktrack as osmn
+else:
+    import osmn_vs as osmn
 # Define Dataset
 dataset = Dataset(train_file, val_file, train_path, val_path, args, data_aug=True)
 # Train parameters

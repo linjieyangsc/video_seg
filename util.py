@@ -4,7 +4,7 @@ Provides utility functions for OSMN library
 import os
 import numpy as np
 #from image_util import compute_robust_moments
-from PIL import Image
+from PIL import Image, ImageEnhance
 import random
 import cv2
 PI = 3.1415926
@@ -146,25 +146,36 @@ def mask_image(image, label):
     assert(image.shape[:2] == label.shape)
     image[label == 0, :] = 0
     return image
+
+def brightness_contrast_aug(im, brightness_range=(0.8, 1.3), contrast_range=(0.8, 1.3)):
+
+    enhancer = ImageEnhance.Brightness(im)
+    factor = np.random.uniform(brightness_range[0], brightness_range[1], 1)
+    im = enhancer.enhance(factor)
+    enhancer = ImageEnhance.Contrast(im)
+    factor = np.random.uniform(contrast_range[0], contrast_range[1], 1)
+    im = enhancer.enhance(factor)
+    return im
+
 def data_augmentation(im, label, new_size, 
-        data_aug_flip = True, random_crop_ratio = 0, random_rotate_angle=0):
+        data_aug_flip = True, random_crop_ratio = 0, random_rotate_angle=0, color_aug=False):
     #old_size = im.size
     if random_crop_ratio:
-        crop_ratio = random.random() * random_crop_ratio
-        crop_pos = random.choice((0,1,2,3))
+        #crop_ratio = random.random() * random_crop_ratio
+        crop_ratio = np.random.uniform( - random_crop_ratio, random_crop_ratio, 4)
+
+        #crop_pos = random.choice((0,1,2,3))
         crop_points = [0,0,im.size[0],im.size[1]]
-        if crop_pos == 0:
-            crop_points[0] = int(crop_ratio * im.size[0])
-        elif crop_pos == 1:
-            crop_points[1] = int(crop_ratio * im.size[1])
-        elif crop_pos == 2:
-            crop_points[2] -= int(crop_ratio * im.size[0])
-        else:
-            crop_points[3] -= int(crop_ratio * im.size[1])
+        crop_points[0] = int(crop_ratio[0] * im.size[0])
+        crop_points[1] = int(crop_ratio[1] * im.size[1])
+        crop_points[2] += int(crop_ratio[2] * im.size[0])
+        crop_points[3] += int(crop_ratio[3] * im.size[1])
         im = im.crop(crop_points)
         label = label.crop(crop_points)
     im = im.resize(new_size, Image.BILINEAR)
     label = label.resize(new_size, Image.NEAREST)
+    if color_aug:
+        im = brightness_contrast_aug(im)
     if random_rotate_angle:
         angle = (random.random() - 0.5) * 2 * random_rotate_angle
         im = Image.fromarray(rotate_image(np.array(im), angle))

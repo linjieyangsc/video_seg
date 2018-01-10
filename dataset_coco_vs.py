@@ -37,6 +37,8 @@ class Dataset:
         self.vg_random_crop_ratio = args.vg_random_crop_ratio
         self.sg_center_perturb_ratio = args.sg_center_perturb_ratio
         self.sg_std_perturb_ratio = args.sg_std_perturb_ratio
+        self.bbox_sup = args.bbox_sup
+        self.vg_color_aug = args.vg_color_aug
         self.train_data = COCO(train_anno_file)
         self.test_data = COCO(test_anno_file)
         if os.path.exists('cache/train_annos.pkl'):
@@ -120,7 +122,7 @@ class Dataset:
                 guide_image, guide_label = data_augmentation(guide_image, guide_label,
                         self.guide_size, data_aug_flip = self.data_aug_flip,
                         random_crop_ratio = self.vg_random_crop_ratio,
-                        random_rotate_angle = self.vg_random_rotate_angle)
+                        random_rotate_angle = self.vg_random_rotate_angle, color_aug=self.vg_color_aug)
             
                 
                 image, label = data_augmentation(image, label, 
@@ -142,7 +144,8 @@ class Dataset:
                 image_data -= self.mean_value
                 guide_image_data -= self.mean_value
                 # masking
-                guide_image_data = mask_image(guide_image_data, guide_label_data)
+                if not self.bbox_sup:
+                    guide_image_data = mask_image(guide_image_data, guide_label_data)
                 images.append(image_data)
                 labels.append(label_data)
                 guide_images.append(guide_image_data)
@@ -192,7 +195,8 @@ class Dataset:
                     gb_image = get_gb_image(label_data, center_perturb=0, std_perturb=0) 
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
                 # masking
-                guide_image_data = mask_image(guide_image_data, guide_label_data)
+                if not self.bbox_sup:
+                    guide_image_data = mask_image(guide_image_data, guide_label_data)
                 images.append(image_data)
                 gb_images.append(gb_image)
                 # only need file name for result saving

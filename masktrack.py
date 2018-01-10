@@ -56,12 +56,11 @@ def crop_features(feature, out_size):
 
 def modulated_conv_block(net, repeat, channels, dilation=1,
         scope_id=0, visual_mod_id = 0,
-        trimmed_mod = False,
         visual_modulation_params = None,
         visual_modulation = False):
     for i in range(repeat):
         net = slim.conv2d(net, channels, [3,3], rate=dilation, scope='conv{}/conv{}_{}'.format(scope_id, scope_id, i+1))
-        if visual_modulation and (not trimmed_mod or i==0):
+        if visual_modulation:
             vis_params = tf.slice(visual_modulation_params, [0,visual_mod_id], [-1,channels], name = 'm_param{}'.format(scope_id))
             net = conditional_normalization(net, vis_params, 
                     scope='conv{}/conv{}_{}'.format(scope_id, scope_id, i+1))
@@ -112,11 +111,7 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
     im_size = tf.shape(inputs[1])
     mod_early_conv = model_params.mod_early_conv
     use_visual_modulator = model_params.use_visual_modulator
-    trimmed_mod = model_params.trimmed_mod
-    if trimmed_mod:
-        n_modulator_param = 512 * 2 + 256 + mod_early_conv * 192
-    else:
-        n_modulator_param = (512 * 6 + 256 * 3) + mod_early_conv * 384
+    n_modulator_param = (512 * 6 + 256 * 3) + mod_early_conv * 384
     aligned_size = model_params.aligned_size
     train_seg = model_params.train_seg
     with tf.variable_scope(scope, [inputs]) as sc:
@@ -166,33 +161,28 @@ def osmn(inputs, model_params, scope='osmn', is_training=False):
               with slim.arg_scope([slim.max_pool2d], padding='SAME'):
                 net_1, visual_mod_id = modulated_conv_block(image, 2, 64,
                         scope_id = 1, visual_mod_id = visual_mod_id,
-                        trimmed_mod = trimmed_mod,
                         visual_modulation_params = modulator_params,
                         visual_modulation = use_visual_modulator and mod_early_conv)
 
                 net_2 = slim.max_pool2d(net_1, [3, 3], scope='pool1')
                 net_2, visual_mod_id = modulated_conv_block(net_2, 2, 128,
                         scope_id = 2, visual_mod_id = visual_mod_id,
-                        trimmed_mod = trimmed_mod,
                         visual_modulation_params = modulator_params,
                         visual_modulation = use_visual_modulator and mod_early_conv)
 
                 net_3 = slim.max_pool2d(net_2, [3, 3], scope='pool2')
                 net_3, visual_mod_id = modulated_conv_block(net_3, 3, 256,
                         scope_id = 3, visual_mod_id = visual_mod_id,
-                        trimmed_mod = trimmed_mod,
                         visual_modulation_params = modulator_params,
                         visual_modulation = use_visual_modulator)
                 net_4 = slim.max_pool2d(net_3, [3, 3], scope='pool3')
                 net_4, visual_mod_id = modulated_conv_block(net_4, 3, 512,
                         scope_id = 4, visual_mod_id = visual_mod_id,
-                        trimmed_mod = trimmed_mod,
                         visual_modulation_params = modulator_params,
                         visual_modulation = use_visual_modulator)
                 net_5 = slim.max_pool2d(net_4, [3, 3], stride=1, scope='pool4')
                 net_5, visual_mod_id = modulated_conv_block(net_5, 3, 512,
                         dilation=2, scope_id = 5, visual_mod_id = visual_mod_id,
-                        trimmed_mod = trimmed_mod,
                         visual_modulation_params = modulator_params,
                         visual_modulation = use_visual_modulator)
                 pool5 = slim.max_pool2d(net_5, [3, 3], stride=1, scope='pool5')

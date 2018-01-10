@@ -9,7 +9,8 @@ import sys
 import random
 import pydensecrf.densecrf as dcrf
 from pydensecrf.utils import unary_from_labels, unary_from_softmax, create_pairwise_bilateral, create_pairwise_gaussian
-from util import get_mask_bbox, get_gb_image, to_bgr, mask_image, adaptive_crop_box, get_dilate_structure, perturb_mask, get_scaled_box
+from util import get_mask_bbox, get_gb_image, to_bgr, mask_image, data_augmentation, \
+        adaptive_crop_box, get_dilate_structure, perturb_mask, get_scaled_box
 class Dataset:
     def __init__(self, train_list, test_list, args,
             data_aug=False):
@@ -25,11 +26,12 @@ class Dataset:
         self.data_aug_flip = data_aug
         self.data_aug_scales = args.data_aug_scales
         self.use_original_mask = args.use_original_mask
-        self.random_crop_ratio = args.random_crop_ratio
         self.vg_random_rotate_angle = args.vg_random_rotate_angle
         self.vg_random_crop_ratio = args.vg_random_crop_ratio
+        self.vg_color_aug = args.vg_color_aug
         self.sg_center_perturb_ratio = args.sg_center_perturb_ratio
         self.sg_std_perturb_ratio = args.sg_std_perturb_ratio
+        self.bbox_sup = args.bbox_sup
         self.multiclass = args.data_version == 2017
         self.adaptive_crop_testing = args.adaptive_crop_testing
         self.train_list = train_list
@@ -94,31 +96,34 @@ class Dataset:
                     ref_label = Image.open(sample[2])
                     image = Image.open(sample[3])
                     label = Image.open(sample[4])
-                if self.data_aug:
-                    image, label, ref_label_new = \
-                            self.data_augmentation(image, label, ref_label, new_size)
+                image = image.resize(new_size, Image.BILINEAR)
+                label = label.resize(new_size, Image.NEAREST)
+                ref_label = ref_label.resize(new_size, Image.NEAREST) 
+                guide_label = guide_label.resize(guide_image.size, Image.NEAREST)
                 bbox = get_mask_bbox(np.array(guide_label))
-                if not self.use_original_mask:
-                    gb_image = get_gb_image(np.array(ref_label_new),center_perturb=self.sg_center_perturb_ratio, 
-                            std_perturb=self.sg_std_perturb_ratio)
-                else:
-                    gb_image = perturb_mask(np.array(ref_label_new))
-                    gb_image = ndimage.morphology.binary_dilation(gb_image, 
-                            structure=self.dilate_structure) * 255
                 guide_image = guide_image.crop(bbox)
                 guide_label = guide_label.crop(bbox)
-                guide_image = guide_image.resize(self.guide_size, Image.BILINEAR)
-                
-                guide_label = guide_label.resize(self.guide_size, Image.NEAREST)
+                guide_image, guide_label = data_augmentation(guide_image, guide_label,
+                        self.guide_size, data_aug_flip = self.data_aug_flip,
+                        random_crop_ratio = self.vg_random_crop_ratio,
+                        random_rotate_angle = self.vg_random_rotate_angle, color_aug = self.vg_color_aug)
+                if not self.use_original_mask:
+                    gb_image = get_gb_image(np.array(ref_label),center_perturb=self.sg_center_perturb_ratio, 
+                            std_perturb=self.sg_std_perturb_ratio)
+                else:
+                    gb_image = perturb_mask(np.array(ref_label))
+                    gb_image = ndimage.morphology.binary_dilation(gb_image, 
+                            structure=self.dilate_structure) * 255
                 image_data = np.array(image, dtype=np.float32)
                 label_data = np.array(label, dtype=np.uint8) > 0 
-                guide_image_data = np.array(guide_image, dtype=np.float32)
-                guide_image_data = to_bgr(guide_image_data)
                 image_data = to_bgr(image_data)
-                guide_image_data -= self.mean_value
                 image_data -= self.mean_value
                 guide_label_data = np.array(guide_label,dtype=np.uint8)
-                guide_image_data = mask_image(guide_image_data, guide_label_data)
+                guide_image_data = np.array(guide_image, dtype=np.float32)
+                guide_image_data = to_bgr(guide_image_data)
+                guide_image_data -= self.mean_value
+                if not self.bbox_sup:
+                    guide_image_data = mask_image(guide_image_data, guide_label_data)
                 guide_images.append(guide_image_data)
                 gb_images.append(gb_image)
                 images.append(image_data)
@@ -200,9 +205,9 @@ class Dataset:
                 image_data = np.array(image, dtype=np.float32)
 
                 # process visual guide images
+                guide_label = guide_label.resize(guide_image.size, Image.NEAREST)
                 bbox = get_mask_bbox(np.array(guide_label))
-                scaled_box = get_scaled_box(bbox, guide_image.size, guide_label.size)
-                guide_image = guide_image.crop(scaled_box)
+                guide_image = guide_image.crop(bbox)
                 guide_label = guide_label.crop(bbox)
                 guide_image = guide_image.resize(self.guide_size, Image.BILINEAR)
                 guide_label = guide_label.resize(self.guide_size, Image.NEAREST)
@@ -212,7 +217,8 @@ class Dataset:
                 guide_image_data -= self.mean_value
                 image_data -= self.mean_value
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
-                guide_image_data = mask_image(guide_image_data, guide_label_data)
+                if not self.bbox_sup:
+                    guide_image_data = mask_image(guide_image_data, guide_label_data)
                 guide_images.append(guide_image_data)
                 gb_images.append(gb_image)
                 images.append(image_data)
@@ -223,17 +229,6 @@ class Dataset:
             return guide_images, gb_images, images, image_paths
         else:
             return None, None, None, None
-    
-    def data_augmentation(self, im, label, guide_label, new_size):
-        im = im.resize(new_size, Image.BILINEAR)
-        label = label.resize(new_size, Image.NEAREST)
-        guide_label = guide_label.resize(new_size, Image.NEAREST)
-        if self.data_aug_flip:
-            if random.random() > 0.5:
-                im = im.transpose(Image.FLIP_LEFT_RIGHT)
-                label = label.transpose(Image.FLIP_LEFT_RIGHT)
-                guide_label = guide_label.transpose(Image.FLIP_LEFT_RIGHT)
-        return im, label, guide_label
     
     def crf_processing(self, image, label, soft_label=False):
         crf = dcrf.DenseCRF2D(image.shape[1], image.shape[0], 2)
