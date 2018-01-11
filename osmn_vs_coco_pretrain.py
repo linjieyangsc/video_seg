@@ -18,29 +18,34 @@ def add_arguments(parser):
             '--data_path',
             type=str,
             required=False,
-            default='/raid/ljyang/data/MS_COCO')
+            default='/raid/ljyang/data/MS_COCO',
+            help='Path to the MS COCO dataset')
     group.add_argument(
             '--src_model_path',
             type=str,
             required=False,
-            default='models/vgg_16.ckpt')
+            default='models/vgg_16.ckpt',
+            help='Model to initialize visual modulator')
     group.add_argument(
             '--seg_model_path',
             type=str,
             required=False,
-            default='models/vgg_16.ckpt')
-
+            default='models/vgg_16.ckpt',
+            help='Model to initialize segmentation model')
 
     group.add_argument(
             '--im_size',
             nargs=2, type=int,
             required = False,
-            default=[400, 400])
+            default=[400, 400],
+            help='Input image size')
     group.add_argument(
             '--data_aug_scales',
             nargs='+', type=float,
             required=False,
-            default=[0.8, 1, 1.2])
+            default=[0.8, 1, 1.2],
+            help='Image scales for data augmentation')
+
 print " ".join(sys.argv[:])
 
 parser = argparse.ArgumentParser()

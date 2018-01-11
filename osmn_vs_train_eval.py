@@ -20,56 +20,63 @@ def add_arguments(parser):
             '--data_path',
             type=str,
             required=False,
-            default='/raid/ljyang/data/DAVIS')
+            default='/raid/ljyang/data/DAVIS',
+            help='Path to DAVIS dataset')
     group.add_argument(
             '--src_model_path',
             type=str,
             required=False,
-            default='')
+            default='',
+            help='Source model path, could be a model pretrained on MS COCO')
     group.add_argument(
             '--seg_model_path',
             type=str,
             required=False,
-            default='')
+            default='',
+            help='If initialize from a standalone segmentation model, set it to be the path of the model')
     group.add_argument(
             '--data_version',
             type=int,
             required=False,
             default=2017,
-            help="""
-                which DAVIS version to use? 2016 or 2017
-                """)
+            help='Which DAVIS version to use? 2016 or 2017')
     group.add_argument(
             '--randomize_guide',
             required=False,
             action='store_true',
-            default=False)
+            default=False,
+            help='Whether to use randomized visual guide, or only the first frame')
     group.add_argument(
             '--label_valid_ratio',
             type=float,
             required=False,
-            default=0.003)
+            default=0.003,
+            help='Parameter to search for valid visual guide, see details in code')
     group.add_argument(
             '--bbox_valid_ratio',
             type=float,
             required=False,
-            default=0.2)
+            default=0.2,
+            help='Parameter to search for valid visual guide, see details in code')
     group.add_argument(
             '--test_split',
             type=str,
             required=False,
-            default='val'
-            )
+            default='val',
+            help='Which split to use for testing? val, train or trainval')
     group.add_argument(
             '--im_size',
             nargs=2, type=int,
             required = False,
-            default=[854, 480])
+            default=[854, 480],
+            help='Input image size')
     group.add_argument(
             '--data_aug_scales',
             type=float, nargs='+',
             required=False,
-            default=[0.5,0.8,1])
+            default=[0.5,0.8,1],
+            help='Image scales to be used by data augmentation')
+
 print " ".join(sys.argv[:])
 parser = argparse.ArgumentParser()
 common_args.add_arguments(parser)
