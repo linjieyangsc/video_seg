@@ -29,12 +29,6 @@ def add_arguments(parser):
             default=True,
             help='Not using spatial modulator')
     group.add_argument(
-            '--spatial_mod_use_bn',
-            required=False,
-            action='store_true',
-            default=False,
-            help='Whether to use batchnorm in spatial modulator')
-    group.add_argument(
             '--no_visual_modulator',
             required=False,
             dest='use_visual_modulator',
