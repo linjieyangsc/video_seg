@@ -1,6 +1,6 @@
 """
-Train / validation script
 One-Shot Modulation Netowrk
+Training on MS-COCO
 """
 import os
 import sys
@@ -87,11 +87,3 @@ if not args.only_testing:
                                  save_step, display_step, global_step, batch_size = batch_size, config=config, 
                                  iter_mean_grad=1, use_image_summary=use_image_summary, resume_training=resume_training, ckpt_name='osmn')
 
-# Test the network
-with tf.Graph().as_default():
-    with tf.device('/gpu:' + str(args.gpu_id)):
-        if not args.only_testing:
-            checkpoint_path = os.path.join(logs_path, 'osmn.ckpt-'+str(max_training_iters))
-        else:
-            checkpoint_path = src_model_path
-        osmn.test(dataset, args, checkpoint_path, result_path, config=config, batch_size = batch_size)

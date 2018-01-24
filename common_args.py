@@ -96,6 +96,11 @@ def add_arguments(parser):
             type=float,
             help='Random crop ratio on the input image')
     group.add_argument(
+            '--vg_keep_aspect_ratio',
+            required=False,
+            action = 'store_true',
+            help='Whether to keep aspect ratio when resizing visual guide')
+    group.add_argument(
             '--vg_color_aug',
             required=False,
             action ='store_true',

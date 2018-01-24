@@ -20,7 +20,6 @@ with open(listFile, 'r') as f:
     fds = [line.strip() for line in f]
 im_num = 0
 iou =[]
-iou_over_sample = 0
 seq_n = 0
 sample_n = 0
 subfd_names = []
@@ -29,6 +28,7 @@ for i, fd in enumerate(fds):
     file_list = os.listdir(os.path.join(gt_path, fd))
     im_list = [name for name in file_list if len(name) > 4 and name[-4:]=='.png']
     im_list = sorted(im_list)
+    im_list = im_list[1:-1] # remove first and last image
     pred_list = os.listdir(os.path.join(pred_path, fd))
     if dataset_version == '2017':
         sub_fds = [name for name in pred_list if len(name) < 4]
@@ -65,11 +65,9 @@ for i, fd in enumerate(fds):
             if not os.path.exists(os.path.join(vis_path, fd)):
                 os.makedirs(os.path.join(vis_path, fd))
             res_im.save(os.path.join(vis_path, fd, im_name))
-        if i > 0 and i < len(im_list) - 1:
-            iou_seq.append(calcIoU(label_gt, label_pred, class_n))
+        iou_seq.append(calcIoU(label_gt, label_pred, class_n))
     iou_seq = np.stack(iou_seq, axis=1)
     print iou_seq.mean(axis=1)
-    iou_over_sample += iou_seq.sum()
     sample_n += iou_seq.size
     iou.extend(iou_seq.mean(axis=1).tolist())#flatten and append
 iou = np.array(iou)

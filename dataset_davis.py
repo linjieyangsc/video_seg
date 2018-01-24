@@ -29,10 +29,12 @@ class Dataset:
         self.vg_random_rotate_angle = args.vg_random_rotate_angle
         self.vg_random_crop_ratio = args.vg_random_crop_ratio
         self.vg_color_aug = args.vg_color_aug
+        self.vg_keep_aspect_ratio = args.vg_keep_aspect_ratio
         self.sg_center_perturb_ratio = args.sg_center_perturb_ratio
         self.sg_std_perturb_ratio = args.sg_std_perturb_ratio
         self.bbox_sup = args.bbox_sup
-        self.multiclass = args.data_version == 2017
+        self.multiclass = hasattr(args, 'data_version') and args.data_version == 2017 \
+                or hasattr(args, 'multiclass') and args.multiclass 
         self.adaptive_crop_testing = args.adaptive_crop_testing
         self.train_list = train_list
         self.test_list = test_list
@@ -105,6 +107,7 @@ class Dataset:
                 guide_label = guide_label.crop(bbox)
                 guide_image, guide_label = data_augmentation(guide_image, guide_label,
                         self.guide_size, data_aug_flip = self.data_aug_flip,
+                        keep_aspect_ratio = self.vg_keep_aspect_ratio,
                         random_crop_ratio = self.vg_random_crop_ratio,
                         random_rotate_angle = self.vg_random_rotate_angle, color_aug = self.vg_color_aug)
                 if not self.use_original_mask:
@@ -140,6 +143,7 @@ class Dataset:
             image_paths = []
             self.crop_boxes = []
             self.images = []
+            assert batch_size == 1, "Only allow batch size = 1 for testing"
             if self.test_ptr + batch_size < self.test_size:
                 idx = np.array(self.test_idx[self.test_ptr:self.test_ptr + batch_size])
                 self.test_ptr += batch_size
@@ -147,26 +151,32 @@ class Dataset:
                 new_ptr = (self.test_ptr + batch_size) % self.test_size
                 idx = np.hstack((self.test_idx[self.test_ptr:], self.test_idx[:new_ptr]))
                 self.test_ptr = new_ptr
-            for i in idx:
-                sample = self.test_list[i]
-                if len(sample) == 3:
-                    guide_image = Image.open(sample[0])
-                    guide_label = Image.open(sample[1])
-                    image = Image.open(sample[2])
-                    ref_label = guide_label
-                    if self.multiclass:
-                        ref_name = os.path.join(*(sample[1].split('/')[-3:-1] + [sample[2].split('/')[-1]]))
-                    else:
-                        ref_name = os.path.join(sample[1].split('/')[-2], sample[2].split('/')[-1])
+            i = idx[0]
+            sample = self.test_list[i]
+            if sample[0] == None:
+                # visual guide image / mask is none, only read spatial guide and input image
+                first_frame = False
+                ref_label = Image.open(sample[2])
+                image = Image.open(sample[3])
+                frame_name = sample[3].split('/')[-1].split('.')[0] + '.png'
+                if self.multiclass:
+                    # seq_name/label_id/frame_name
+                    ref_name = os.path.join(*(sample[2].split('/')[-3:-1] + [frame_name]))
                 else:
-                    guide_image = Image.open(sample[0])
-                    guide_label = Image.open(sample[1])
-                    ref_label = Image.open(sample[2])
-                    image = Image.open(sample[3])
-                    if self.multiclass:
-                        ref_name = os.path.join(*(sample[1].split('/')[-3:-1] + [sample[3].split('/')[-1]]))
-                    else:
-                        ref_name = os.path.join(sample[1].split('/')[-2], sample[3].split('/')[-1])
+                    # seq_name/frame_name
+                    ref_name = os.path.join(sample[2].split('/')[-2], frame_name)
+            else:
+                # only process visual guide image / mask
+                first_frame = True
+                guide_image = Image.open(sample[0])
+                guide_label = Image.open(sample[1])
+                if self.multiclass:
+                    # seq_name/label_id/frame_name
+                    ref_name = os.path.join(*(sample[1].split('/')[-3:]))
+                else:
+                    # seq_name/frame_name
+                    ref_name = os.path.join(*(sample[1].split('/')[-2:]))
+            if not first_frame:
                 if len(self.size) == 2:
                     self.new_size = self.size
                 else:
@@ -203,29 +213,35 @@ class Dataset:
                     gb_image = ndimage.morphology.binary_dilation(ref_label_data, 
                             structure=self.dilate_structure) * 255
                 image_data = np.array(image, dtype=np.float32)
-
+                image_data = to_bgr(image_data)
+                image_data -= self.mean_value
+                gb_images.append(gb_image)
+                images.append(image_data)
+                images = np.array(images)
+                gb_images = np.array(gb_images)[...,np.newaxis]
+                guide_images = None
+            else:
                 # process visual guide images
                 guide_label = guide_label.resize(guide_image.size, Image.NEAREST)
                 bbox = get_mask_bbox(np.array(guide_label))
                 guide_image = guide_image.crop(bbox)
                 guide_label = guide_label.crop(bbox)
-                guide_image = guide_image.resize(self.guide_size, Image.BILINEAR)
-                guide_label = guide_label.resize(self.guide_size, Image.NEAREST)
+                guide_image, guide_label = data_augmentation(guide_image, guide_label,
+                        self.guide_size, data_aug_flip=False, keep_aspect_ratio = self.vg_keep_aspect_ratio)
+                
+                #guide_image = guide_image.resize(self.guide_size, Image.BILINEAR)
+                #guide_label = guide_label.resize(self.guide_size, Image.NEAREST)
                 guide_image_data = np.array(guide_image, dtype=np.float32)
-                image_data = to_bgr(image_data)
                 guide_image_data = to_bgr(guide_image_data)
                 guide_image_data -= self.mean_value
-                image_data -= self.mean_value
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
                 if not self.bbox_sup:
                     guide_image_data = mask_image(guide_image_data, guide_label_data)
                 guide_images.append(guide_image_data)
-                gb_images.append(gb_image)
-                images.append(image_data)
-                image_paths.append(ref_name)
-            images = np.array(images)
-            gb_images = np.array(gb_images)[...,np.newaxis]
-            guide_images = np.array(guide_images) 
+                guide_images = np.array(guide_images) 
+                images = None
+                gb_images = None
+            image_paths.append(ref_name)
             return guide_images, gb_images, images, image_paths
         else:
             return None, None, None, None

@@ -158,13 +158,12 @@ def brightness_contrast_aug(im, brightness_range=(0.8, 1.3), contrast_range=(0.8
     return im
 
 def data_augmentation(im, label, new_size, 
-        data_aug_flip = True, random_crop_ratio = 0, random_rotate_angle=0, color_aug=False):
+        data_aug_flip = True, keep_aspect_ratio = False, random_crop_ratio = 0, random_rotate_angle=0, color_aug=False):
     #old_size = im.size
     if random_crop_ratio:
         #crop_ratio = random.random() * random_crop_ratio
         crop_ratio = np.random.uniform( - random_crop_ratio, random_crop_ratio, 4)
 
-        #crop_pos = random.choice((0,1,2,3))
         crop_points = [0,0,im.size[0],im.size[1]]
         crop_points[0] = int(crop_ratio[0] * im.size[0])
         crop_points[1] = int(crop_ratio[1] * im.size[1])
@@ -172,8 +171,20 @@ def data_augmentation(im, label, new_size,
         crop_points[3] += int(crop_ratio[3] * im.size[1])
         im = im.crop(crop_points)
         label = label.crop(crop_points)
-    im = im.resize(new_size, Image.BILINEAR)
-    label = label.resize(new_size, Image.NEAREST)
+    if keep_aspect_ratio:
+        # resize but keeep aspect ratio
+        ratio = np.amin(np.array(new_size, dtype=np.float32) / np.array(im.size))
+        ka_size = (np.array(im.size) * ratio).astype(np.int32).tolist() 
+        im = im.resize(ka_size, Image.BILINEAR)
+        label = label.resize(ka_size, Image.NEAREST)
+        padding_size = (np.array(new_size) - np.array(ka_size))/2
+        padding_size_2 = np.array(new_size) - padding_size
+        padding_pos = [ -padding_size[0], -padding_size[1], padding_size_2[0], padding_size_2[1]]
+        im = im.crop(padding_pos)
+        label = label.crop(padding_pos)
+    else:
+        im = im.resize(new_size, Image.BILINEAR)
+        label = label.resize(new_size, Image.NEAREST)
     if color_aug:
         im = brightness_contrast_aug(im)
     if random_rotate_angle:

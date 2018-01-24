@@ -27,7 +27,7 @@ class Dataset:
         self.data_aug = data_aug
         self.data_aug_flip = data_aug
         self.data_aug_scales = args.data_aug_scales
-        self.fg_thresh = 0.03
+        self.fg_thresh = 0.05
         random.seed(1234)
         self.train_image_path = train_image_path
         self.test_image_path = test_image_path
@@ -39,6 +39,7 @@ class Dataset:
         self.sg_std_perturb_ratio = args.sg_std_perturb_ratio
         self.bbox_sup = args.bbox_sup
         self.vg_color_aug = args.vg_color_aug
+        self.vg_keep_aspect_ratio = args.vg_keep_aspect_ratio
         self.train_data = COCO(train_anno_file)
         self.test_data = COCO(test_anno_file)
         if os.path.exists('cache/train_annos.pkl'):
@@ -58,6 +59,8 @@ class Dataset:
         self.test_ptr = 0
         self.train_size = len(self.train_annos)
         self.test_size = len(self.test_annos)
+        print '# Traning samples', self.train_size
+        print '# Testing samples', self.test_size
         self.train_idx = np.arange(self.train_size) 
         self.test_idx = np.arange(self.test_size)
         self.size = args.im_size
@@ -68,9 +71,17 @@ class Dataset:
     def prefilter(self, dataset):
         res_annos = []
         annos = dataset.dataset['annotations']
+        # remove non-salient object categories
+        # this speeds up training, but the overall performance is similar if you use all categories
+        ignore_cat_names = ["book", "vase", "teddy bear", "toothbrush", "clock", "scissors", "toaster", "refrigerator", "laptop", "cell phone", 
+                "tv", "mouse", "keyboard", "couch", "toilet", "dining table", "chair", "potted plant", "oven", 
+                "sink", "microwave", "banana", "apple", "orange", "sandwich", "broccoli", "carrot", "pizza", "hot dog", "donut", "cake",
+                "fork", "knife", "spoon", "bowl", "wine glass", "cup", "bottle"] 
+        ignore_cat_ids = dataset.getCatIds(catNms=ignore_cat_names)
         for anno in annos:
-            # throw away all crowd annotations
-            if anno['iscrowd']: continue
+            # throw away all crowd annotations and classes in ignore list
+            if anno['iscrowd'] or anno['category_id'] in ignore_cat_ids: continue
+ 
             m = dataset.annToMask(anno)
             mask_area = np.count_nonzero(m)
             if mask_area / float(m.shape[0] * m.shape[1]) > self.fg_thresh:
@@ -121,6 +132,7 @@ class Dataset:
                 guide_label = label.crop(anno['bbox'])
                 guide_image, guide_label = data_augmentation(guide_image, guide_label,
                         self.guide_size, data_aug_flip = self.data_aug_flip,
+                        keep_aspect_ratio = self.vg_keep_aspect_ratio,
                         random_crop_ratio = self.vg_random_crop_ratio,
                         random_rotate_angle = self.vg_random_rotate_angle, color_aug=self.vg_color_aug)
             
@@ -178,8 +190,11 @@ class Dataset:
                 
                 guide_image = image.crop(anno['bbox'])
                 guide_label = label.crop(anno['bbox'])
-                guide_image = guide_image.resize(self.guide_size, Image.BILINEAR)
-                guide_label = guide_label.resize(self.guide_size, Image.NEAREST)
+                guide_image, guide_label = data_augmentation(guide_image, guide_label,
+                        self.guide_size, keep_aspect_ratio = self.vg_keep_aspect_ratio)
+                
+                #guide_image = guide_image.resize(self.guide_size, Image.BILINEAR)
+                #guide_label = guide_label.resize(self.guide_size, Image.NEAREST)
                 image, label = data_augmentation(image, label, self.size, data_aug_flip = False)
                 image_data = np.array(image, dtype=np.float32)
                 guide_image_data = np.array(guide_image, dtype=np.float32)

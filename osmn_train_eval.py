@@ -45,7 +45,7 @@ def add_arguments(parser):
             required=False,
             action='store_true',
             default=False,
-            help='Whether to use full resolution image, can benefit when the visual guide if small and has low resolution.')
+            help='Whether to use full resolution image, can benefit when the visual guide is small and has low resolution.')
     group.add_argument(
             '--randomize_guide',
             required=False,
@@ -82,7 +82,6 @@ def add_arguments(parser):
             required=False,
             default=[0.5,0.8,1],
             help='Image scales to be used by data augmentation')
-
 print " ".join(sys.argv[:])
 parser = argparse.ArgumentParser()
 common_args.add_arguments(parser)
@@ -110,24 +109,22 @@ else:
     baseDirImg = os.path.join(baseDir, 'JPEGImages', '480p')
 label_fd = '480p_split' if data_version==2017 else '480p_all'
 baseDirLabel = os.path.join(baseDir, 'Annotations', label_fd)
-result_path = args.result_path #os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSMN')
-guideDirLabel = result_path
+resDirLabel = args.result_path
 for name in val_seq_names:
     test_frames = sorted(os.listdir(os.path.join(baseDirImg, name)))
     label_fds = os.listdir(os.path.join(baseDirLabel, name)) if data_version == 2017 else \
             ['']
     for label_id in label_fds:
+        # each sample: visual guide image, visual guide mask, spatial guide mask, input image
         test_imgs_with_guide += [(os.path.join(baseDirImg, name, '00000.jpg'), 
                 os.path.join(baseDirLabel, name, label_id, '00000.png'),
-                os.path.join(baseDirImg, name, '00000.jpg'))]
+                None, None)]
+        # reuse the visual modulation parameters and use predicted spatial guide image of previous frame
         
-        test_imgs_with_guide += [(os.path.join(baseDirImg, name, '00000.jpg'), 
-                os.path.join(baseDirLabel, name, label_id, '00000.png'),
+        test_imgs_with_guide += [(None, None, os.path.join(baseDirLabel, name, label_id, '00000.png'),
                 os.path.join(baseDirImg, name, '00001.jpg'))]
-        # use the static visual guide image and predicted spatial guide image of previous frame
-        test_imgs_with_guide += [(os.path.join(baseDirImg, name, '00000.jpg'),
-                os.path.join(baseDirLabel, name, label_id, '00000.png'),
-                os.path.join(guideDirLabel, name, label_id, prev_frame[:-4] +'.png'),
+        test_imgs_with_guide += [(None, None,
+                os.path.join(resDirLabel, name, label_id, prev_frame[:-4] +'.png'),
                 os.path.join(baseDirImg, name, frame))
                 for prev_frame, frame in zip(test_frames[1:-1], test_frames[2:])]
                     
@@ -135,10 +132,10 @@ for name in train_seq_names:
     train_frames = sorted(os.listdir(os.path.join(baseDirImg, name)))
     label_fds = os.listdir(os.path.join(baseDirLabel, name)) if data_version == 2017 else \
             [os.path.join(baseDirLabel, name)]
-    print name
     for label_id in label_fds:
+        # each sample: visual guide image, visual guide mask, spatial guide mask, input image, ground truth mask
         if randomize_guide:
-            #get valid image ids with objects
+            # filter images to get good quality visual guide images
             valid_label_idx = []
             nonblank_label_idx = []
             for frame in train_frames:
@@ -204,4 +201,4 @@ with tf.Graph().as_default():
             checkpoint_path = os.path.join(logs_path, 'osmn.ckpt-'+str(max_training_iters))
         else:
             checkpoint_path = args.src_model_path    
-        osmn.test(dataset, args, checkpoint_path, result_path, config=config, batch_size=1)
+        osmn.test(dataset, args, checkpoint_path, args.result_path, config=config, batch_size=1)

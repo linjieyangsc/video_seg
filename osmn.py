@@ -78,6 +78,15 @@ def modulated_conv_block(net, repeat, channels, dilation=1, scope_id=0, visual_m
     return net, visual_mod_id
 
 def visual_modulator(guide_image, model_params, scope='osmn', is_training=False):
+    """Defines the visual modulator
+    Args:
+    gudie_image: visual guide image
+    model_params: parameters related to model structure
+    scope: scope name for the network
+    is_training: training or testing
+    Returns:
+    Tensor of the visual modulation parameters
+    """
     mod_early_conv = model_params.mod_early_conv
     n_modulator_param = 512 * 6 + 256 * 3 + mod_early_conv * 384
     with tf.variable_scope(scope, [guide_image]) as sc:
@@ -113,8 +122,12 @@ def visual_modulator(guide_image, model_params, scope='osmn', is_training=False)
 def osmn(inputs, model_params, visual_modulator_params = None, scope='osmn', is_training=False):
     """Defines the OSMN
     Args:
-    inputs: Tensorflow placeholder that contains the input image and the first frame masked forground
+    inputs: Tensorflow placeholder that contains the input image, visual guide, and spatial guide
+    model_params: paramters related to the model structure
+    visual_modulator_params: if None it will generate new visual modulation parameters using guide image, otherwise
+            it will reuse the current paramters.
     scope: Scope name for the network
+    is_training: training or testing 
     Returns:
     net: Output Tensor of the network
     end_points: Dictionary with all Tensors of the network
@@ -241,11 +254,15 @@ def osmn(inputs, model_params, visual_modulator_params = None, scope='osmn', is_
         return net, end_points
 
 def osmn_deeplab(inputs, model_params, visual_modulator_params=None, scope='osmn', is_training=False):
-    """defines the osmn
-    args:
-    inputs: tensorflow placeholder that contains the input image and the first frame masked forground
-    scope: scope name for the network
-    returns:
+    """Defines the OSMN with deeplab backbone
+    Args:
+    inputs: Tensorflow placeholder that contains the input image, visual guide, and spatial guide
+    model_params: paramters related to the model structure
+    visual_modulator_params: if None it will generate new visual modulation parameters using guide image, otherwise
+            it will reuse the current paramters.
+    scope: Scope name for the network
+    is_training: training or testing 
+    Returns:
     net: output tensor of the network
     end_points: dictionary with all tensors of the network
     """
@@ -379,10 +396,14 @@ def osmn_deeplab(inputs, model_params, visual_modulator_params=None, scope='osmn
         return net, end_points
 
 def osmn_masktrack(inputs, model_params, visual_modulator_params=None, scope='osmn', is_training=False):
-    """Defines the OSMN
+    """Defines the OSMN with masktrack backbone
     Args:
-    inputs: Tensorflow placeholder that contains the input image and the first frame masked forground
+    inputs: Tensorflow placeholder that contains the input image, visual guide, and spatial guide
+    model_params: paramters related to the model structure
+    visual_modulator_params: if None it will generate new visual modulation parameters using guide image, otherwise
+            it will reuse the current paramters.
     scope: Scope name for the network
+    is_training: training or testing 
     Returns:
     net: Output Tensor of the network
     end_points: Dictionary with all Tensors of the network
@@ -569,7 +590,6 @@ def train_finetune(dataset, model_params, initial_ckpt, seg_ckpt, learning_rate,
     initial_ckpt: Path to the checkpoint to initialize the whole network or visual modulator, depend on seg_ckpt
     seg_ckpt: If seg_ckpt is not None, initial_ckpt is used to initialize the visual modulator, and seg_ckpt is used to
             initialize segmentation network
-    supervison: Level of the side outputs supervision: 1-Strong 2-Weak 3-No supervision
     learning_rate: Value for the learning rate. It can be a number or an instance to a learning rate object.
     logs_path: Path to store the checkpoints
     max_training_iters: Number of training iterations
@@ -580,6 +600,8 @@ def train_finetune(dataset, model_params, initial_ckpt, seg_ckpt, learning_rate,
     batch_size: Size of the training batch
     resume_training: Boolean to try to restore from a previous checkpoint (True) or not (False)
     config: Reference to a Configuration object used in the creation of a Session
+    use_image_summary: Boolean to use image summary during training in tensorboard
+    ckpt_name: checkpoint name for saving
     Returns:
     """
     model_name = os.path.join(logs_path, ckpt_name+".ckpt")
@@ -801,19 +823,23 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
         print 'start testing process'
         time_start = time.time()
         for frame in range(dataset.get_test_size()):
-            guide_images, gb_images, images, image_paths = dataset.next_batch(batch_size, 'test')
-            save_names = [ name.split('.')[0] + '.png' for name in image_paths]
-            if image_paths[0].split('/')[-1] == '00000.jpg':
+            guide_images, gb_images, images, save_names = dataset.next_batch(batch_size, 'test')
+            # create folder for results
+            if len(save_names[0].split('/')) > 1:
+                save_path = os.path.join(result_path, *(save_names[0].split('/')[:-1]))
+                if not os.path.exists(save_path):
+                    os.makedirs(save_path)
+            if images is None or gb_images is None:
                 # first frame of a squence
                 if model_params.use_visual_modulator:
                     curr_v_m_params = sess.run(v_m_params, feed_dict={guide_image: guide_images})
-                # create a black dummy image for result of the first frame
-                scipy.misc.imsave(os.path.join(result_path, save_names[0]), np.zeros(images.shape[1:3]))
+                # create a black dummy image for result of the first frame, to be compatible with DAVIS eval toolkit
+                scipy.misc.imsave(os.path.join(result_path, save_names[0]), np.zeros(guide_images.shape[1:3]))
             else:
                 if model_params.use_visual_modulator:
-                    feed_dict = {guide_image: guide_images, gb_image:gb_images, input_image:images, v_m_params:curr_v_m_params}
+                    feed_dict = { gb_image:gb_images, input_image:images, v_m_params:curr_v_m_params}
                 else:
-                    feed_dict = {guide_image: guide_images, gb_image:gb_images, input_image:images}
+                    feed_dict = { gb_image:gb_images, input_image:images}
                 res_all = sess.run([probabilities], feed_dict=feed_dict)
                 res = res_all[0]
                 if model_params.adaptive_crop_testing:
@@ -824,10 +850,6 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
                 else:
                     res_np = res.astype(np.float32)[:, :, :, 0] > 0.5             
                 print 'Saving ' + os.path.join(result_path, save_names[0])
-                if len(save_names[0].split('/')) > 1:
-                    save_path = os.path.join(result_path, *(save_names[0].split('/')[:-1]))
-                    if not os.path.exists(save_path):
-                        os.makedirs(save_path)
                 scipy.misc.imsave(os.path.join(result_path, save_names[0]), res_np[0].astype(np.float32))
                 curr_score_name = save_names[0][:-4]
                 if model_params.save_score:
