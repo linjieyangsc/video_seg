@@ -39,6 +39,7 @@ def instance_normalization(inputs,reuse=None, variables_collections=None,output_
         return slim.utils.collect_named_outputs(output_collections,
                                                 sc.original_name_scope,
                                                 outputs)
+
 def conditional_normalization(inputs, gamma, reuse=None, variable_collections=None,
                         output_collections=None, trainable=True, scope=None):
     with tf.variable_scope(scope, 'ConditionalNorm', [inputs, gamma],

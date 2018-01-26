@@ -84,12 +84,6 @@ def add_arguments(parser):
             default=False,
             help='whether or not use crf postprocessing')
     group.add_argument(
-            '--adaptive_crop_testing',
-            required=False,
-            action='store_true',
-            default=False,
-            help='Use adaptive croppping around spatial guide to do testing')
-    group.add_argument(
             '--random_crop_ratio',
             required=False,
             default=0.0,
@@ -112,6 +106,12 @@ def add_arguments(parser):
             default=0.0,
             type=float,
             help='Random crop ratio on visual guide')
+    group.add_argument(
+            '--vg_pad_ratio',
+            required=False,
+            default=0.03,
+            type=float,
+            help='Default padding ratio on visual guide')
     group.add_argument(
             '--vg_random_rotate_angle',
             required=False,

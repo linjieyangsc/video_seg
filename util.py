@@ -158,15 +158,17 @@ def brightness_contrast_aug(im, brightness_range=(0.8, 1.3), contrast_range=(0.8
     return im
 
 def data_augmentation(im, label, new_size, 
-        data_aug_flip = True, keep_aspect_ratio = False, random_crop_ratio = 0, random_rotate_angle=0, color_aug=False):
+        data_aug_flip = True, pad_ratio = 0, keep_aspect_ratio = False, 
+        random_crop_ratio = 0, random_rotate_angle=0, color_aug=False):
     #old_size = im.size
-    if random_crop_ratio:
-        #crop_ratio = random.random() * random_crop_ratio
-        crop_ratio = np.random.uniform( - random_crop_ratio, random_crop_ratio, 4)
-
+    if random_crop_ratio > 0 or pad_ratio > 0:
+        if random_crop_ratio > 0:
+            crop_ratio = np.random.uniform( pad_ratio - random_crop_ratio, pad_ratio + random_crop_ratio, 4)
+        elif pad_ratio > 0:
+            crop_ratio = np.array([pad_ratio] * 4)
         crop_points = [0,0,im.size[0],im.size[1]]
-        crop_points[0] = int(crop_ratio[0] * im.size[0])
-        crop_points[1] = int(crop_ratio[1] * im.size[1])
+        crop_points[0] = int(- crop_ratio[0] * im.size[0])
+        crop_points[1] = int(- crop_ratio[1] * im.size[1])
         crop_points[2] += int(crop_ratio[2] * im.size[0])
         crop_points[3] += int(crop_ratio[3] * im.size[1])
         im = im.crop(crop_points)

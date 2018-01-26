@@ -842,8 +842,6 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
                     feed_dict = { gb_image:gb_images, input_image:images}
                 res_all = sess.run([probabilities], feed_dict=feed_dict)
                 res = res_all[0]
-                if model_params.adaptive_crop_testing:
-                    res = dataset.restore_crop(res)
                 if model_params.crf_postprocessing:
                     res_np = np.zeros(res.shape[:-1])
                     res_np[0] = dataset.crf_processing(dataset.images[0], (res[0,:,:,0] > 0.5).astype(np.int32))

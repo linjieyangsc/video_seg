@@ -30,6 +30,7 @@ class Dataset:
         self.vg_random_crop_ratio = args.vg_random_crop_ratio
         self.vg_color_aug = args.vg_color_aug
         self.vg_keep_aspect_ratio = args.vg_keep_aspect_ratio
+        self.vg_pad_ratio = args.vg_pad_ratio
         self.sg_center_perturb_ratio = args.sg_center_perturb_ratio
         self.sg_std_perturb_ratio = args.sg_std_perturb_ratio
         self.bbox_sup = args.bbox_sup
@@ -188,27 +189,7 @@ class Dataset:
                 gb_image = get_gb_image(ref_label_data, center_perturb=0, std_perturb=0)
                 image_ref_crf = image.resize(self.new_size, Image.BILINEAR)
                 self.images.append(np.array(image_ref_crf))
-                if self.adaptive_crop_testing:
-                    if np.any(ref_label_data):
-                        crop_box = adaptive_crop_box(ref_label_data)
-                    else:
-                        # use the whole image
-                        crop_box = (0,0, ref_label_data.shape[1], ref_label_data.shape[0])
-                    crop_w, crop_h = crop_box[2] - crop_box[0], crop_box[3] - crop_box[1]
-                    gb_image = gb_image[crop_box[1]: crop_box[3], crop_box[0]: crop_box[2]]
-                    
-                    scaled_box = get_scaled_box(crop_box, image.size, self.new_size)
-                    image = image.crop(scaled_box)
-                    # resize short size of image to self.crop_size
-                    resize_ratio = max(float(self.crop_size) / crop_w, float(self.crop_size) / crop_h)
-                    resize_ratio = max(1, resize_ratio)
-                    new_size = (int(resize_ratio * crop_w + 0.5), int(resize_ratio * crop_h + 0.5))
-                    self.crop_boxes.append(crop_box)
-                    gb_image = ndimage.zoom(gb_image, resize_ratio, mode='nearest')
-                    
-                    image = image.resize(new_size, Image.BILINEAR)
-                else:
-                    image = image.resize(self.new_size, Image.BILINEAR)
+                image = image.resize(self.new_size, Image.BILINEAR)
                 if self.use_original_mask:
                     gb_image = ndimage.morphology.binary_dilation(ref_label_data, 
                             structure=self.dilate_structure) * 255
@@ -227,7 +208,7 @@ class Dataset:
                 guide_image = guide_image.crop(bbox)
                 guide_label = guide_label.crop(bbox)
                 guide_image, guide_label = data_augmentation(guide_image, guide_label,
-                        self.guide_size, data_aug_flip=False, keep_aspect_ratio = self.vg_keep_aspect_ratio)
+                        self.guide_size, data_aug_flip=False, pad_ratio = self.vg_pad_ratio, keep_aspect_ratio = self.vg_keep_aspect_ratio)
                 
                 #guide_image = guide_image.resize(self.guide_size, Image.BILINEAR)
                 #guide_label = guide_label.resize(self.guide_size, Image.NEAREST)
@@ -264,20 +245,6 @@ class Dataset:
         # Find out the most probable class for each pixel.
         return np.argmax(crf_out, axis=0).reshape((image.shape[0], image.shape[1]))
 
-    # restore the score map when using adaptive cropping test
-    def restore_crop(self, res):
-        n_samples = res.shape[0]
-        channels = res.shape[3]
-        assert(channels == 1)
-        restored = np.zeros((n_samples, self.size[1], self.size[0], channels), dtype=np.float32)
-        for res_sample, restored_sample, crop_box in zip(res, restored, self.crop_boxes):
-            #print 'score range before restore', np.amax(res_sample), np.amin(res_sample)
-            res_im = Image.fromarray(res_sample[:,:,0], mode='F')
-            res_sample = np.array(res_im.resize((crop_box[2] - crop_box[0], crop_box[3] - crop_box [1]), Image.BILINEAR))
-            #print 'score range after restore', np.amax(res_sample), np.amin(res_sample)
-            restored_sample[crop_box[1]:crop_box[3], crop_box[0]:crop_box[2],0] = res_sample
-        return restored
-    
     def get_train_size(self):
         return self.train_size
 

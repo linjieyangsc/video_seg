@@ -27,7 +27,7 @@ class Dataset:
         self.data_aug = data_aug
         self.data_aug_flip = data_aug
         self.data_aug_scales = args.data_aug_scales
-        self.fg_thresh = 0.05
+        self.fg_thresh = 0.03
         random.seed(1234)
         self.train_image_path = train_image_path
         self.test_image_path = test_image_path
@@ -71,16 +71,9 @@ class Dataset:
     def prefilter(self, dataset):
         res_annos = []
         annos = dataset.dataset['annotations']
-        # remove non-salient object categories
-        # this speeds up training, but the overall performance is similar if you use all categories
-        ignore_cat_names = ["book", "vase", "teddy bear", "toothbrush", "clock", "scissors", "toaster", "refrigerator", "laptop", "cell phone", 
-                "tv", "mouse", "keyboard", "couch", "toilet", "dining table", "chair", "potted plant", "oven", 
-                "sink", "microwave", "banana", "apple", "orange", "sandwich", "broccoli", "carrot", "pizza", "hot dog", "donut", "cake",
-                "fork", "knife", "spoon", "bowl", "wine glass", "cup", "bottle"] 
-        ignore_cat_ids = dataset.getCatIds(catNms=ignore_cat_names)
         for anno in annos:
-            # throw away all crowd annotations and classes in ignore list
-            if anno['iscrowd'] or anno['category_id'] in ignore_cat_ids: continue
+            # throw away all crowd annotations
+            if anno['iscrowd']: continue
  
             m = dataset.annToMask(anno)
             mask_area = np.count_nonzero(m)
@@ -193,8 +186,6 @@ class Dataset:
                 guide_image, guide_label = data_augmentation(guide_image, guide_label,
                         self.guide_size, keep_aspect_ratio = self.vg_keep_aspect_ratio)
                 
-                #guide_image = guide_image.resize(self.guide_size, Image.BILINEAR)
-                #guide_label = guide_label.resize(self.guide_size, Image.NEAREST)
                 image, label = data_augmentation(image, label, self.size, data_aug_flip = False)
                 image_data = np.array(image, dtype=np.float32)
                 guide_image_data = np.array(guide_image, dtype=np.float32)
