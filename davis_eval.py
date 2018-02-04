@@ -6,16 +6,16 @@ import numpy as np
 from util import calcIoU
 PALETTE = [0, 0, 0, 128, 0, 0, 0, 128, 0, 128, 128, 0, 0, 0, 128, 128, 0, 128, 0, 128, 128, 128, 128, 128, 64, 0, 0, 191, 0, 0, 64, 128, 0, 191, 128, 0, 64, 0, 128]
 
-gt_path = '/raid/ljyang/data/DAVIS/Annotations/480p'
-pred_path = sys.argv[1] #'DAVIS/Results/Segmentations/480p/OSVOS'
-dataset_version = sys.argv[2]
-dataset_split = sys.argv[3]
-if len(sys.argv) > 4:
-    vis_path = sys.argv[4]
+data_path = sys.argv[1]
+pred_path = sys.argv[2] #'DAVIS/Results/Segmentations/480p/OSVOS'
+dataset_version = sys.argv[3]
+dataset_split = sys.argv[4]
+if len(sys.argv) > 5:
+    vis_path = sys.argv[5]
 else:
     vis_path = None
-listFile = '/raid/ljyang/data/DAVIS/ImageSets/%s/%s.txt' % (dataset_version, dataset_split)
-
+listFile = '%s/ImageSets/%s/%s.txt' % (data_path, dataset_version, dataset_split)
+gt_path = os.path.join(data_path, 'Annotations', '480p')
 with open(listFile, 'r') as f:
     fds = [line.strip() for line in f]
 im_num = 0

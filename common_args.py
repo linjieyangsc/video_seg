@@ -5,7 +5,7 @@ def add_arguments(parser):
     group.add_argument(
             '--result_path',
             type=str,
-            required=True,
+            required=False,
             default='',
             help='Path to save predicted results')
     group.add_argument(
@@ -75,7 +75,7 @@ def add_arguments(parser):
             type=str,
             choices=['osvos','masktrack','deeplab'],
             default="osvos",
-            help='Pick one model type from: osvos, masktrack, deeplab')
+            help='Pick one base model from: osvos, masktrack, deeplab')
     group = parser.add_argument_group(title='Data Argument')
     group.add_argument(
             '--crf_postprocessing',
@@ -103,7 +103,7 @@ def add_arguments(parser):
     group.add_argument(
             '--vg_random_crop_ratio',
             required=False,
-            default=0.0,
+            default=0.1,
             type=float,
             help='Random crop ratio on visual guide')
     group.add_argument(
@@ -115,7 +115,7 @@ def add_arguments(parser):
     group.add_argument(
             '--vg_random_rotate_angle',
             required=False,
-            default=0,
+            default=10,
             type=int,
             help='Random rotation angle on visual guide')
     group.add_argument(
@@ -153,7 +153,7 @@ def add_arguments(parser):
             '--training_iters',
             type=int,
             required=False,
-            default=100000,
+            default=200000,
             help='Training iterations')
     group.add_argument(
             '--save_iters',

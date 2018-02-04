@@ -20,14 +20,9 @@ def add_arguments(parser):
             required=False,
             default='/raid/ljyang/data/youtube_masks')
     group.add_argument(
-            '--src_model_path',
+            '--whole_model_path',
             type=str,
-            required=False,
-            default='')
-    group.add_argument(
-            '--seg_model_path',
-            type=str,
-            required=False,
+            required=True,
             default='')
     group.add_argument(
             '--im_size',
@@ -89,5 +84,5 @@ config.gpu_options.per_process_gpu_memory_fraction = 0.9
 # Test the network
 with tf.Graph().as_default():
     with tf.device('/gpu:' + str(args.gpu_id)):
-        checkpoint_path = args.src_model_path    
+        checkpoint_path = args.whole_model_path    
         osmn.test(dataset, args, checkpoint_path, args.result_path, config=config, batch_size=1)

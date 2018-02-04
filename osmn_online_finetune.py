@@ -22,12 +22,7 @@ def add_arguments(parser):
             required=False,
             default='/raid/ljyang/data/DAVIS')
     group.add_argument(
-            '--src_model_path',
-            type=str,
-            required=False,
-            default='')
-    group.add_argument(
-            '--seg_model_path',
+            '--whole_model_path',
             type=str,
             required=False,
             default='')
@@ -118,7 +113,7 @@ for name in val_seq_names:
                     display_step = args.display_iters
                     logs_path = os.path.join(args.model_save_path, name, label_id)
                     global_step = tf.Variable(0, name='global_step', trainable=False)
-                    osmn.train_finetune(dataset, args, args.src_model_path, args.seg_model_path, args.learning_rate, logs_path, max_training_iters,
+                    osmn.train_finetune(dataset, args, args.learning_rate, logs_path, max_training_iters,
                                      save_step, display_step, global_step, 
                                      batch_size = args.batch_size, config=config,
                                      iter_mean_grad=1, use_image_summary = args.use_image_summary, resume_training=args.resume_training, ckpt_name='osmn')
@@ -129,5 +124,5 @@ for name in val_seq_names:
                 if not args.only_testing:
                     checkpoint_path = os.path.join(logs_path, 'osmn.ckpt-'+str(max_training_iters))
                 else:
-                    checkpoint_path = args.src_model_path    
+                    checkpoint_path = args.whole_model_path    
                 osmn.test(dataset, args, checkpoint_path, args.result_path, config=config, batch_size=1)

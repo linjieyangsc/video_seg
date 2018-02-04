@@ -4,9 +4,10 @@ import cv2
 from PIL import Image
 import numpy as np
 from util import calcIoU
-gt_path = '/raid/ljyang/data/youtube_masks/Labels'
-pred_path = sys.argv[1] #'DAVIS/Results/Segmentations/480p/OSVOS'
-listFile='/raid/ljyang/data/youtube_masks/all.txt'
+dataset_path = sys.argv[1] # '/raid/ljyang/data/youtube_masks/Labels'
+pred_path = sys.argv[2] #'DAVIS/Results/Segmentations/480p/OSVOS'
+listFile=os.path.join(dataset_path, 'all.txt')
+gt_path = os.path.join(dataset_path, 'Labels')
 with open(listFile, 'r') as f:
     fds = [line.strip() for line in f]
 im_num = 0

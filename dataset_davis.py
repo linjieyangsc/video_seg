@@ -36,7 +36,6 @@ class Dataset:
         self.bbox_sup = args.bbox_sup
         self.multiclass = hasattr(args, 'data_version') and args.data_version == 2017 \
                 or hasattr(args, 'multiclass') and args.multiclass 
-        self.adaptive_crop_testing = args.adaptive_crop_testing
         self.train_list = train_list
         self.test_list = test_list
         self.train_ptr = 0

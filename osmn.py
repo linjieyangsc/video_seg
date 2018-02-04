@@ -580,7 +580,7 @@ def get_model_func(base_model):
     else:
         raise Exception("Invalid model type!")
 
-def train_finetune(dataset, model_params, initial_ckpt, seg_ckpt, learning_rate, logs_path, max_training_iters, save_step, display_step,
+def train_finetune(dataset, model_params, learning_rate, logs_path, max_training_iters, save_step, display_step,
            global_step, iter_mean_grad=1, batch_size=1, resume_training=False, config=None, 
            use_image_summary=True, ckpt_name="osmn"):
     """Train OSMN
@@ -683,19 +683,19 @@ def train_finetune(dataset, model_params, initial_ckpt, seg_ckpt, learning_rate,
             print('Initializing from previous checkpoint...')
             saver.restore(sess, last_ckpt_path)
             step = global_step.eval() + 1
-        elif seg_ckpt is not None and len(seg_ckpt) > 0:
+        elif model_params.whole_model_path == '':
             print('Initializing from pre-trained imagenet model...')
             if model_params.use_visual_modulator:
-                load_model(initial_ckpt, 'vgg_16', 'osmn/modulator')(sess)
-            if 'vgg_16' in seg_ckpt:
-                load_model(seg_ckpt, 'vgg_16', 'osmn/seg')(sess)
+                load_model(model_params.vis_mod_model_path, 'vgg_16', 'osmn/modulator')(sess)
+            if 'vgg_16' in model_params.seg_model_path:
+                load_model(model_params.seg_model_path, 'vgg_16', 'osmn/seg')(sess)
             else:
                 print('Initializing from segmentation model...')
-                load_model(seg_ckpt, model_params.base_model, 'osmn/seg')(sess)
+                load_model(model_params.seg_model_path, model_params.base_model, 'osmn/seg')(sess)
             step = 1
         else:
-            print('Initializing from pre-trained coco model...')
-            load_model(initial_ckpt, 'osmn', 'osmn')(sess)
+            print('Initializing from pre-trained model...')
+            load_model(model_params.whole_model_path, 'osmn', 'osmn')(sess)
             step = 1
         sess.run(interp_surgery(tf.global_variables()))
         print('Weights initialized')
