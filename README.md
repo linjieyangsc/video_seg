@@ -5,7 +5,7 @@ This repo is the released code of one-shot modulation network described in the t
 @article{ Yang2018osmn,
   author = {Linjie Yang and Yanran Wang and Xuehan Xiong and Jianchao Yang and Aggelos K. Katsaggelos},  
 title = {Efficient Video Object Segmentation via Network Modulation},
-  journal = {arXiv:XXX},
+  journal = {arXiv preprint arXiv:1802.01218},
   year = {2018}
 }
 ```
