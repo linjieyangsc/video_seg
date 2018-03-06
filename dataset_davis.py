@@ -11,6 +11,8 @@ import pydensecrf.densecrf as dcrf
 from pydensecrf.utils import unary_from_labels, unary_from_softmax, create_pairwise_bilateral, create_pairwise_gaussian
 from util import get_mask_bbox, get_gb_image, to_bgr, mask_image, data_augmentation, \
         adaptive_crop_box, get_dilate_structure, perturb_mask, get_scaled_box
+def _get_obj_mask(image, idx):
+    return Image.fromarray((np.array(image) == idx).astype(np.uint8))
 class Dataset:
     def __init__(self, train_list, test_list, args,
             data_aug=False):
@@ -98,11 +100,20 @@ class Dataset:
                     ref_label = Image.open(sample[2])
                     image = Image.open(sample[3])
                     label = Image.open(sample[4])
+                if len(sample) > 5:
+                    label_id = sample[5]
+                else: 
+                    label_id = 0
                 image = image.resize(new_size, Image.BILINEAR)
                 label = label.resize(new_size, Image.NEAREST)
                 ref_label = ref_label.resize(new_size, Image.NEAREST) 
                 guide_label = guide_label.resize(guide_image.size, Image.NEAREST)
-                bbox = get_mask_bbox(np.array(guide_label))
+                if label_id > 0:
+                    guide_label = _get_obj_mask(guide_label, label_id)
+                    ref_label = _get_obj_mask(ref_label, label_id)
+                    label = _get_obj_mask(label, label_id)
+                guide_label_data = np.array(guide_label)
+                bbox = get_mask_bbox(guide_label_data)
                 guide_image = guide_image.crop(bbox)
                 guide_label = guide_label.crop(bbox)
                 guide_image, guide_label = data_augmentation(guide_image, guide_label,
@@ -153,13 +164,21 @@ class Dataset:
                 self.test_ptr = new_ptr
             i = idx[0]
             sample = self.test_list[i]
+            if len(sample) > 4:
+                label_id = sample[4]
+            else: 
+                label_id = 0
+            
             if sample[0] == None:
                 # visual guide image / mask is none, only read spatial guide and input image
                 first_frame = False
                 ref_label = Image.open(sample[2])
                 image = Image.open(sample[3])
                 frame_name = sample[3].split('/')[-1].split('.')[0] + '.png'
-                if self.multiclass:
+                if len(sample) > 5:
+                    # vid_path/label_id/frame_name
+                    ref_name = os.path.join(sample[5], frame_name)
+                elif self.multiclass:
                     # seq_name/label_id/frame_name
                     ref_name = os.path.join(*(sample[2].split('/')[-3:-1] + [frame_name]))
                 else:
@@ -170,7 +189,10 @@ class Dataset:
                 first_frame = True
                 guide_image = Image.open(sample[0])
                 guide_label = Image.open(sample[1])
-                if self.multiclass:
+                if len(sample) > 5:
+                    # vid_path/label_id/frame_name
+                    ref_name = os.path.join(sample[5], sample[1].split('/')[-1])
+                elif self.multiclass:
                     # seq_name/label_id/frame_name
                     ref_name = os.path.join(*(sample[1].split('/')[-3:]))
                 else:
@@ -184,14 +206,17 @@ class Dataset:
                     resize_ratio = max(float(self.size[0])/image.size[0], float(self.size[0])/image.size[1])
                     self.new_size = (int(resize_ratio * image.size[0]), int(resize_ratio * image.size[1]))
                 ref_label = ref_label.resize(self.new_size, Image.NEAREST)
-                ref_label_data = np.array(ref_label) / 255
-                gb_image = get_gb_image(ref_label_data, center_perturb=0, std_perturb=0)
+                if label_id > 0:
+                    ref_label = _get_obj_mask(ref_label, label_id)
+                ref_label_data = np.array(ref_label) 
                 image_ref_crf = image.resize(self.new_size, Image.BILINEAR)
                 self.images.append(np.array(image_ref_crf))
                 image = image.resize(self.new_size, Image.BILINEAR)
                 if self.use_original_mask:
                     gb_image = ndimage.morphology.binary_dilation(ref_label_data, 
                             structure=self.dilate_structure) * 255
+                else:
+                    gb_image = get_gb_image(ref_label_data, center_perturb=0, std_perturb=0)
                 image_data = np.array(image, dtype=np.float32)
                 image_data = to_bgr(image_data)
                 image_data -= self.mean_value
@@ -202,7 +227,10 @@ class Dataset:
                 guide_images = None
             else:
                 # process visual guide images
+                # resize to same size of guide_image first, in case of full resolution input
                 guide_label = guide_label.resize(guide_image.size, Image.NEAREST)
+                if label_id > 0:
+                    guide_label = _get_obj_mask(guide_label, label_id)
                 bbox = get_mask_bbox(np.array(guide_label))
                 guide_image = guide_image.crop(bbox)
                 guide_label = guide_label.crop(bbox)

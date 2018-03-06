@@ -168,6 +168,12 @@ def add_arguments(parser):
             default=1e-5,
             help='Learning rate in training')
     group.add_argument(
+            '--max_to_keep',
+            type=int,
+            required=False,
+            default=2,
+            help='How many model snapshots to keep while training')
+    group.add_argument(
             '--display_iters',
             type=int,
             required=False,
