@@ -71,7 +71,7 @@ config.gpu_options.per_process_gpu_memory_fraction = 0.9
 
 with open(val_path, 'r') as f:
     val_seq_names = [line.strip() for line in f]
-baseDirImg = os.path.join(baseDir, 'JPEGImages', 'Full-Resolution')
+baseDirImg = os.path.join(baseDir, 'JPEGImages', '480p')
 label_fd = '480p_split' if data_version==2017 else '480p_all'
 baseDirLabel = os.path.join(baseDir, 'Annotations', label_fd)
 resDirLabel = args.result_path

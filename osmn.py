@@ -11,6 +11,7 @@ import os
 import scipy.misc
 from PIL import Image
 from model_func import load_model, interp_surgery, osmn, osmn_masktrack, osmn_deeplab, visual_modulator
+from model_func import osmn_lite, visual_modulator_lite
 
 
 def class_balanced_cross_entropy_loss(output, label):
@@ -64,7 +65,8 @@ def visual_guide_summary(images):
 def get_model_func(base_model):
     model_dict = { 'osvos': osmn,
                     'deeplab': osmn_deeplab,
-                    'masktrack': osmn_masktrack
+                    'masktrack': osmn_masktrack,
+                    'lite': osmn_lite
                 }
     if base_model in model_dict:
         return model_dict[base_model]
@@ -176,18 +178,15 @@ def train_finetune(dataset, model_params, learning_rate, logs_path, max_training
         elif model_params.whole_model_path == '':
             print('Initializing from pre-trained imagenet model...')
             if model_params.use_visual_modulator:
-                load_model(model_params.vis_mod_model_path, 'vgg_16', 'osmn/modulator')(sess)
-            if 'vgg_16' in model_params.seg_model_path:
-                load_model(model_params.seg_model_path, 'vgg_16', 'osmn/seg')(sess)
-            else:
-                print('Initializing from segmentation model...')
-                load_model(model_params.seg_model_path, model_params.base_model, 'osmn/seg')(sess)
+                load_model(model_params.vis_mod_model_path, 'osmn/modulator')(sess)
+            load_model(model_params.seg_model_path, 'osmn/seg')(sess)
             step = 1
         else:
             print('Initializing from pre-trained model...')
-            load_model(model_params.whole_model_path, 'osmn', 'osmn')(sess)
+            load_model(model_params.whole_model_path, 'osmn')(sess)
             step = 1
-        sess.run(interp_surgery(tf.global_variables()))
+        if model_params.base_model != 'lite':
+            sess.run(interp_surgery(tf.global_variables()))
         print('Weights initialized')
 
         print 'Start training'
@@ -292,7 +291,10 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
     model_func = get_model_func(model_params.base_model)
     # split the model into visual modulator and other parts, visual modulator only need to run once
     if model_params.use_visual_modulator:
-        v_m_params = visual_modulator(guide_image, model_params, is_training=False)
+        if model_params.base_model =='lite':
+            v_m_params = visual_modulator_lite(guide_image, model_params, is_training=False)
+        else:
+            v_m_params = visual_modulator(guide_image, model_params, is_training=False)
     else:
         v_m_params = None
     net, end_points = model_func([guide_image, gb_image, input_image], model_params, visual_modulator_params = v_m_params, is_training=False)
@@ -304,7 +306,8 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
 
     with tf.Session(config=config) as sess:
         sess.run(tf.global_variables_initializer())
-        sess.run(interp_surgery(tf.global_variables()))
+        if not model_params.base_model == 'lite':
+            sess.run(interp_surgery(tf.global_variables()))
         saver.restore(sess, checkpoint_file)
         if not os.path.exists(result_path):
             os.makedirs(result_path)

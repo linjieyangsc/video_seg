@@ -5,8 +5,9 @@ import tensorflow as tf
 import os
 import numpy as np
 from ops import conditional_normalization
+import mobilenet_v1
 slim = tf.contrib.slim
-def load_model_from_numpy(sess, ckpt_path, src_scope, dst_scope):
+def load_model_from_numpy(sess, ckpt_path, dst_scope):
     weights = np.load(ckpt_path).tolist()
     var_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=dst_scope)
     matched_variables = []
@@ -23,7 +24,7 @@ def load_model_from_numpy(sess, ckpt_path, src_scope, dst_scope):
     print 'matched variables from ckpt', ckpt_path
     print matched_variables
 
-def load_model(ckpt_path, src_scope, dst_scope):
+def load_model(ckpt_path, dst_scope):
     """Initialize the network parameters from an existing model with replaced scope names
     Args:
     Path to the checkpoint
@@ -31,7 +32,7 @@ def load_model(ckpt_path, src_scope, dst_scope):
     Function that takes a session and initilaizes the network
     """
     if ckpt_path[-4:] == '.npy':
-        init_fn = lambda sess: load_model_from_numpy(sess, ckpt_path, src_scope, dst_scope)
+        init_fn = lambda sess: load_model_from_numpy(sess, ckpt_path, dst_scope)
     else:
         reader = tf.train.NewCheckpointReader(ckpt_path)
         var_to_shape_map = reader.get_variable_to_shape_map()
@@ -49,6 +50,8 @@ def load_model(ckpt_path, src_scope, dst_scope):
             else:
                 v_new = v
             print v_new
+            if '/' not in v_new: continue
+            src_scope = v_new.split('/')[0]
             corr_var = slim.get_model_variables(v_new.replace(src_scope, dst_scope))
             if len(corr_var) > 0 and var_to_shape_map[v] == corr_var[0].get_shape().as_list():
                 vars_corresp[v] = corr_var[0]
@@ -163,6 +166,86 @@ def visual_modulator(guide_image, model_params, scope='osmn', is_training=False)
                 modulator_params = tf.squeeze(modulator_params, [1,2])
     return modulator_params
 
+def visual_modulator_lite(guide_image, model_params, scope='osmn', is_training=False):
+    """Defines the visual modulator
+    Args:
+    gudie_image: visual guide image
+    model_params: parameters related to model structure
+    scope: scope name for the network
+    is_training: training or testing
+    Returns:
+    Tensor of the visual modulation parameters
+    """
+    mod_early_conv = model_params.mod_early_conv
+    n_modulator_param = 1024 
+    with tf.variable_scope(scope, [guide_image]) as sc, \
+            slim.arg_scope(mobilenet_v1.mobilenet_v1_arg_scope(is_training=is_training)) as arg_sc:
+        modulator_params = None
+
+        # Collect outputs of all intermediate layers.
+        modulator_params, end_points = mobilenet_v1.mobilenet_v1(
+                guide_image, scope = 'modulator',
+                num_classes = n_modulator_param,
+                spatial_squeeze = False,
+                is_training = is_training)
+    return modulator_params
+def osmn_lite(inputs, model_params, visual_modulator_params = None, scope='osmn', is_training=False):
+    """Defines the OSMN
+    Args:
+    inputs: Tensorflow placeholder that contains the input image, visual guide, and spatial guide
+    model_params: paramters related to the model structure
+    visual_modulator_params: if None it will generate new visual modulation parameters using guide image, otherwise
+            it will reuse the current paramters.
+    scope: Scope name for the network
+    is_training: training or testing 
+    Returns:
+    net: Output Tensor of the network
+    end_points: Dictionary with all Tensors of the network
+    """
+    guide_im_size = tf.shape(inputs[0])
+    im_size = tf.shape(inputs[2])
+    batch_size = inputs[1].get_shape().as_list()[0]
+    use_visual_modulator = model_params.use_visual_modulator
+    use_spatial_modulator = model_params.use_spatial_modulator
+    train_seg = model_params.train_seg
+    n_modulator_param = 1024
+    output_stride = 16
+    batch_norm_params = {
+                    'decay': 0.99,
+                    'scale': True,
+                    'epsilon': 0.001,
+                    'updates_collections': None,
+                    'is_training': not model_params.fix_bn and is_training
+    }
+    if use_visual_modulator and visual_modulator_params==None:
+        visual_modulator_params = visual_modulator_lite(inputs[0], model_params, scope=scope, is_training = is_training)
+    with tf.variable_scope(scope, [inputs]) as sc, slim.arg_scope(mobilenet_v1.mobilenet_v1_arg_scope(is_training=is_training)) as arg_sc:
+        end_points_collection = sc.name + '_end_points'
+        
+        # index to mark the current position of the modulation params
+        visual_mod_id = 0
+        with tf.variable_scope('modulator_sp'):
+            with slim.arg_scope([slim.conv2d],
+                                  activation_fn=tf.nn.relu,
+                                  normalizer_fn=slim.batch_norm,
+                                  normalizer_params=batch_norm_params,
+                                  padding='SAME',
+                                  outputs_collections=end_points_collection) as bn_arg_sc:
+                if not use_spatial_modulator:
+                    conv5_att = None
+                else:
+                    ds_mask = slim.avg_pool2d(inputs[1], [output_stride, output_stride], stride=output_stride, scope='pool1')
+                    conv5_att = slim.conv2d(ds_mask, 1024, [1,1], scope='conv5')
+        
+        # Collect outputs of all intermediate layers.
+        net, end_points = mobilenet_v1.mobilenet_v1_base(inputs[2],
+                output_stride = output_stride, scope='seg')
+        net = net * visual_modulator_params + conv5_att
+
+        net = slim.conv2d(net, 64, [1, 1], normalizer_fn = None, scope='score')
+        net = slim.conv2d_transpose(net, 1, output_stride * 2, output_stride, normalizer_fn=None, padding="SAME", scope='score-up')
+        end_points = slim.utils.convert_collection_to_dict(end_points_collection)
+        return net, end_points
 def osmn(inputs, model_params, visual_modulator_params = None, scope='osmn', is_training=False):
     """Defines the OSMN
     Args:
@@ -508,25 +591,25 @@ def osmn_masktrack(inputs, model_params, visual_modulator_params=None, scope='os
                 fc6_1 = slim.dropout(fc6_1, 0.5, is_training=is_training, scope='drop6_1')
                 fc7_1 = slim.conv2d(fc6_1, 1024, [1,1], scope='fc7_1')
                 fc7_1 = slim.dropout(fc7_1, 0.5, is_training=is_training, scope='drop7_1')
-                fc8_voc12_1 = slim.conv2d(fc7_1, 1, [1,1], activation_fn=None, scope='fc8_voc12_1')
+                fc8_voc12_1 = slim.conv2d(fc7_1, 1, [1,1], activation_fn=None, scope='fc8_1')
                 ## hole = 12
                 fc6_2 = slim.conv2d(pool5, 1024, [3,3], rate=12, scope='fc6_2')
                 fc6_2 = slim.dropout(fc6_2, 0.5, is_training=is_training, scope='drop6_2')
                 fc7_2 = slim.conv2d(fc6_2, 1024, [1,1], scope='fc7_2')
                 fc7_2 = slim.dropout(fc7_2, 0.5, is_training=is_training, scope='drop7_2')
-                fc8_voc12_2 = slim.conv2d(fc7_2, 1, [1,1], activation_fn=None, scope='fc8_voc12_2')
+                fc8_voc12_2 = slim.conv2d(fc7_2, 1, [1,1], activation_fn=None, scope='fc8_2')
                 ## hole = 18
                 fc6_3 = slim.conv2d(pool5, 1024, [3,3], rate=18, scope='fc6_3')
                 fc6_3 = slim.dropout(fc6_3, 0.5, is_training=is_training, scope='drop6_3')
                 fc7_3 = slim.conv2d(fc6_3, 1024, [1,1], scope='fc7_3')
                 fc7_3 = slim.dropout(fc7_3, 0.5, is_training=is_training, scope='drop7_3')
-                fc8_voc12_3 = slim.conv2d(fc7_3, 1, [1,1], activation_fn=None, scope='fc8_voc12_3')
+                fc8_voc12_3 = slim.conv2d(fc7_3, 1, [1,1], activation_fn=None, scope='fc8_3')
                 ## hole = 24
                 fc6_4 = slim.conv2d(pool5, 1024, [3,3], rate=24, scope='fc6_4')
                 fc6_4 = slim.dropout(fc6_4, 0.5, is_training=is_training, scope='drop6_4')
                 fc7_4 = slim.conv2d(fc6_4, 1024, [1,1], scope='fc7_4')
                 fc7_4 = slim.dropout(fc7_4, 0.5, is_training=is_training, scope='drop7_4')
-                fc8_voc12_4 = slim.conv2d(fc7_4, 1, [1,1], activation_fn=None, scope='fc8_voc12_4')
+                fc8_voc12_4 = slim.conv2d(fc7_4, 1, [1,1], activation_fn=None, scope='fc8_4')
                 fc8_voc12 = fc8_voc12_1 + fc8_voc12_2 + fc8_voc12_3 + fc8_voc12_4
                 with slim.arg_scope([slim.conv2d_transpose],
                         activation_fn=None, biases_initializer=None, padding='VALID',

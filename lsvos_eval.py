@@ -14,7 +14,7 @@ if len(sys.argv) > 4:
     vis_path = sys.argv[4]
 else:
     vis_path = None
-listFile = '%s/all_%s_seqs.json' % (data_path, dataset_split)
+listFile = '%s/%s_seqs.json' % (data_path, dataset_split)
 gt_path = os.path.join(data_path, 'Annotations', '480p')
 seq_data = json.load(open(listFile))
 im_num = 0
@@ -22,8 +22,7 @@ iou =[]
 seq_n = 0
 sample_n = 0
 subfd_names = []
-print 'compute first 50 sequences'
-for seq , i in zip(seq_data, range(50)):
+for seq  in seq_data:
     vid_frames = seq['frames']
     vid_anno_path = seq['anno_path']
     vid_id = seq['vid']

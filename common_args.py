@@ -73,9 +73,9 @@ def add_arguments(parser):
             '--base_model',
             required=False,
             type=str,
-            choices=['osvos','masktrack','deeplab'],
+            choices=['osvos','masktrack','deeplab','lite'],
             default="osvos",
-            help='Pick one base model from: osvos, masktrack, deeplab')
+            help='Pick one base model from: osvos, masktrack, deeplab, lite')
     group = parser.add_argument_group(title='Data Argument')
     group.add_argument(
             '--crf_postprocessing',

@@ -170,11 +170,12 @@ else:
                 train_imgs_with_guide += [(os.path.join(vid_image_path, frames[0][:-4]+'.jpg'),
                     os.path.join(vid_anno_path, frames[0]),
                     os.path.join(vid_anno_path, prev_frame),
-                    os.path.join(vid_image_path, prev_frame[:-4] + '.jpg'),
+                    os.path.join(vid_image_path, frame[:-4] + '.jpg'),
                     os.path.join(vid_anno_path, frame), label_id)
                     for prev_frame, frame in zip(frames[:-1], frames[1:])]
-    with open(cache_file,'wb') as f:
-        pickle.dump((test_imgs_with_guide, train_imgs_with_guide), f)
+    if args.use_cached_list: 
+        with open(cache_file,'wb') as f:
+            pickle.dump((test_imgs_with_guide, train_imgs_with_guide), f)
 # Define Dataset
 dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide, args,
         data_aug=True)
