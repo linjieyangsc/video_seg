@@ -138,6 +138,9 @@ def mobilenet_v1_base(inputs,
                       final_endpoint='Conv2d_13_pointwise',
                       min_depth=8,
                       depth_multiplier=1.0,
+                      vis_mod_params=None,
+                      sp_mod_params=None,
+                      mod_layer_ids=[],
                       conv_defs=None,
                       output_stride=None,
                       scope=None):
@@ -180,7 +183,9 @@ def mobilenet_v1_base(inputs,
   """
   depth = lambda d: max(int(d * depth_multiplier), min_depth)
   end_points = {}
-
+  if vis_mod_params is not None:
+      vis_mod_idx = 0
+      sp_mod_idx = 0
   # Used to find thinned depths for each layer.
   if depth_multiplier <= 0:
     raise ValueError('depth_multiplier is not greater than zero.')
@@ -252,6 +257,13 @@ def mobilenet_v1_base(inputs,
                             normalizer_fn=slim.batch_norm,
                             scope=end_point)
 
+          if i in mod_layer_ids and vis_mod_params is not None:
+              ch = depth(conv_def.depth)
+              vis_mod_params_cur = tf.slice(vis_mod_params, [0,0,0,vis_mod_idx], [-1,1,1,ch])
+              vis_mod_idx += ch
+              sp_mod_params_cur = sp_mod_params[sp_mod_idx]
+              sp_mod_idx += 1
+              net = net * vis_mod_params_cur + sp_mod_params_cur
           end_points[end_point] = net
           if end_point == final_endpoint:
             return net, end_points

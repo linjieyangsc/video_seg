@@ -177,7 +177,7 @@ def visual_modulator_lite(guide_image, model_params, scope='osmn', is_training=F
     Tensor of the visual modulation parameters
     """
     mod_early_conv = model_params.mod_early_conv
-    n_modulator_param = 1024 
+    n_modulator_param = 1024 + 512 + 256 + 128
     with tf.variable_scope(scope, [guide_image]) as sc, \
             slim.arg_scope(mobilenet_v1.mobilenet_v1_arg_scope(is_training=is_training)) as arg_sc:
         modulator_params = None
@@ -208,8 +208,9 @@ def osmn_lite(inputs, model_params, visual_modulator_params = None, scope='osmn'
     use_visual_modulator = model_params.use_visual_modulator
     use_spatial_modulator = model_params.use_spatial_modulator
     train_seg = model_params.train_seg
-    n_modulator_param = 1024
-    output_stride = 16
+    n_modulator_param = 1024 + 512 + 256 + 128
+    mod_layer_ids = [3, 5, 11, 13]
+    output_stride = 32
     batch_norm_params = {
                     'decay': 0.99,
                     'scale': True,
@@ -232,18 +233,46 @@ def osmn_lite(inputs, model_params, visual_modulator_params = None, scope='osmn'
                                   padding='SAME',
                                   outputs_collections=end_points_collection) as bn_arg_sc:
                 if not use_spatial_modulator:
-                    conv5_att = None
+                    sp_mod_params = None
                 else:
-                    ds_mask = slim.avg_pool2d(inputs[1], [output_stride, output_stride], stride=output_stride, scope='pool1')
-                    conv5_att = slim.conv2d(ds_mask, 1024, [1,1], scope='conv5')
+                    ds_mask = slim.avg_pool2d(inputs[1], [4, 4], stride=4, scope='pool4')
+                    conv3_att = slim.conv2d(ds_mask, 128, [1,1], scope='conv3')
+                    ds_mask = slim.avg_pool2d(ds_mask, [2, 2], scope='pool8')
+                    conv5_att = slim.conv2d(ds_mask, 256, [1,1], scope='conv5')
+                    ds_mask = slim.avg_pool2d(ds_mask, [2, 2], scope='pool16')
+                    conv11_att = slim.conv2d(ds_mask, 512, [1,1], scope='conv11')
+                    ds_mask = slim.avg_pool2d(ds_mask, [2, 2], scope='pool32')
+                    conv13_att = slim.conv2d(ds_mask, 1024, [1,1], scope='conv13')
+                    sp_mod_params = [conv3_att, conv5_att, conv11_att, conv13_att]
         
         # Collect outputs of all intermediate layers.
         net, end_points = mobilenet_v1.mobilenet_v1_base(inputs[2],
-                output_stride = output_stride, scope='seg')
-        net = net * visual_modulator_params + conv5_att
+                output_stride = output_stride, 
+                vis_mod_params = visual_modulator_params,
+                sp_mod_params = sp_mod_params,
+                mod_layer_ids = mod_layer_ids,
+                scope='seg')
 
-        net = slim.conv2d(net, 64, [1, 1], normalizer_fn = None, scope='score')
-        net = slim.conv2d_transpose(net, 1, output_stride * 2, output_stride, normalizer_fn=None, padding="SAME", scope='score-up')
+        with slim.arg_scope([slim.conv2d],
+                            activation_fn=None, normalizer_fn=None):
+            net_2 = end_points['Conv2d_3_pointwise']
+            net_3 = end_points['Conv2d_5_pointwise']
+            net_4 = end_points['Conv2d_11_pointwise']
+            net_5 = end_points['Conv2d_13_pointwise']
+            side_2 = slim.conv2d(net_2, 16, [3, 3], scope='conv3_16')
+            side_3 = slim.conv2d(net_3, 16, [3, 3], scope='conv5_16')
+            side_4 = slim.conv2d(net_4, 16, [3, 3], scope='conv11_16')
+            side_5 = slim.conv2d(net_5, 16, [3, 3], scope='conv13_16')
+            up_size = [im_size[1]/2, im_size[2]/2]
+            side_2_f = tf.image.resize_bilinear(side_2, up_size)
+            side_3_f = tf.image.resize_bilinear(side_3, up_size)
+            side_4_f = tf.image.resize_bilinear(side_4, up_size)
+            side_5_f = tf.image.resize_bilinear(side_5, up_size)
+            
+            net = tf.concat([side_2_f, side_3_f, side_4_f, side_5_f], axis=3)
+            net = slim.conv2d(net, 1, [1,1], scope='score')
+            net = tf.image.resize_bilinear(net, [im_size[1], im_size[2]])
+        #net = slim.conv2d_transpose(net, 1, output_stride * 2, output_stride, normalizer_fn=None, padding="SAME", scope='score-up')
         end_points = slim.utils.convert_collection_to_dict(end_points_collection)
         return net, end_points
 def osmn(inputs, model_params, visual_modulator_params = None, scope='osmn', is_training=False):

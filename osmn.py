@@ -302,13 +302,13 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
     global_step = tf.Variable(0, name='global_step', trainable=False)
 
     # Create a saver to load the network
-    saver = tf.train.Saver([v for v in tf.global_variables() if '-up' not in v.name]) #if '-up' not in v.name and '-cr' not in v.name])
+    saver = tf.train.Saver([v for v in tf.global_variables()]) #if '-up' not in v.name and '-cr' not in v.name])
 
     with tf.Session(config=config) as sess:
         sess.run(tf.global_variables_initializer())
+        saver.restore(sess, checkpoint_file)
         if not model_params.base_model == 'lite':
             sess.run(interp_surgery(tf.global_variables()))
-        saver.restore(sess, checkpoint_file)
         if not os.path.exists(result_path):
             os.makedirs(result_path)
         print 'start testing process'
