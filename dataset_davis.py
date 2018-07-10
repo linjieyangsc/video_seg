@@ -52,7 +52,8 @@ class Dataset:
         np.random.shuffle(self.train_idx)
         self.size = args.im_size
         self.crop_size = 300
-        self.mean_value = np.array((104, 117, 123))
+        self.mean_value = args.mean_value #np.array((104, 117, 123))
+        self.scale_value = args.scale_value # 0.00787 for mobilenet 
         self.guide_size = (224, 224)
 
     def next_batch(self, batch_size, phase):
@@ -131,11 +132,11 @@ class Dataset:
                 image_data = np.array(image, dtype=np.float32)
                 label_data = np.array(label, dtype=np.uint8) > 0 
                 image_data = to_bgr(image_data)
-                image_data -= self.mean_value
+                image_data = (image_data - self.mean_value) * self.scale_value
                 guide_label_data = np.array(guide_label,dtype=np.uint8)
                 guide_image_data = np.array(guide_image, dtype=np.float32)
                 guide_image_data = to_bgr(guide_image_data)
-                guide_image_data -= self.mean_value
+                guide_image_data = (guide_image_data - self.mean_value) * self.scale_value
                 if not self.bbox_sup:
                     guide_image_data = mask_image(guide_image_data, guide_label_data)
                 guide_images.append(guide_image_data)
@@ -219,7 +220,7 @@ class Dataset:
                     gb_image = get_gb_image(ref_label_data, center_perturb=0, std_perturb=0)
                 image_data = np.array(image, dtype=np.float32)
                 image_data = to_bgr(image_data)
-                image_data -= self.mean_value
+                image_data = (image_data - self.mean_value) * self.scale_value
                 gb_images.append(gb_image)
                 images.append(image_data)
                 images = np.array(images)
@@ -241,7 +242,7 @@ class Dataset:
                 #guide_label = guide_label.resize(self.guide_size, Image.NEAREST)
                 guide_image_data = np.array(guide_image, dtype=np.float32)
                 guide_image_data = to_bgr(guide_image_data)
-                guide_image_data -= self.mean_value
+                guide_image_data = (guide_image_data - self.mean_value) * self.scale_value
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
                 if not self.bbox_sup:
                     guide_image_data = mask_image(guide_image_data, guide_label_data)

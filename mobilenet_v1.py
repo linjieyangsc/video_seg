@@ -336,6 +336,8 @@ def mobilenet_v1(inputs,
         # 1 x 1 x 1024
         #net = slim.dropout(net, keep_prob=dropout_keep_prob, scope='Dropout_1b')
         logits = slim.conv2d(net, num_classes, [1, 1], activation_fn=None,
+                             weights_initializer=tf.zeros_initializer(),
+                             biases_initializer = tf.ones_initializer(),
                              normalizer_fn=None, scope='Conv2d_1c_1x1')
         if spatial_squeeze:
           logits = tf.squeeze(logits, [1, 2], name='SpatialSqueeze')
@@ -388,8 +390,9 @@ def mobilenet_v1_arg_scope(is_training=True,
       'is_training': is_training,
       'center': True,
       'scale': True,
-      'decay': 0.9997,
+      'decay': 0.997,
       'epsilon': 0.001,
+      'updates_collections': None
   }
 
   # Set weight_decay for weights in Conv and DepthSepConv layers.

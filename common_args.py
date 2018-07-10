@@ -83,6 +83,8 @@ def add_arguments(parser):
             action='store_true',
             default=False,
             help='whether or not use crf postprocessing')
+    
+    group = parser.add_argument_group(title='Data augmentation arguments')
     group.add_argument(
             '--random_crop_ratio',
             required=False,
@@ -131,6 +133,19 @@ def add_arguments(parser):
             type=float,
             help='Size perturbation ratio on spatial guide')
     group.add_argument(
+            '--mean_value',
+            type=float,
+            nargs=3,
+            default=[104,117,123],
+            help='Mean value to substract from input image')
+    group.add_argument(
+            '--scale_value',
+            type=float,
+            default=1.0,
+            help='Scale value to multiple with input image')
+
+    group = parser.add_argument_group(title='Running Arguments')
+    group.add_argument(
             '--batch_size',
             type=int,
             required=False,
@@ -142,7 +157,6 @@ def add_arguments(parser):
             action='store_true',
             default=False,
             help='Whether to save prediction score. Need to be set for DAVIS 2017 for prediction combination.')
-    group = parser.add_argument_group(title='Running Arguments')
     group.add_argument(
             '--gpu_id',
             type=int,

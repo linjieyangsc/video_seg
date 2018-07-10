@@ -42,24 +42,20 @@ def class_balanced_cross_entropy_loss(output, label):
 
 
 def binary_seg_summary(images, predictions, masks, gts):
-    unnormalized_images = images +  np.array((104, 117, 123)) 
-    unnormalized_images = tf.cast(unnormalized_images, tf.float32)
+    images = tf.cast(images, tf.float32)
     foreground_predictions = tf.less(0.5, predictions) 
     foreground_labels = tf.cast(foreground_predictions, tf.float32)
     batch_size = images.get_shape().as_list()[0]
     mask_binary = tf.less(0.1, masks)
     mask_binary = tf.cast(mask_binary, tf.float32)
     labels_concat = tf.concat([mask_binary, gts, foreground_labels], 3)
-    #image_b_channel = tf.slice(unnormalized_image, [0,0,0,0],[-1,-1,-1,1])
-    #image_g_channel = tf.slice(
-    results = tf.add(unnormalized_images * 0.5, labels_concat * 255 * 0.5)
+    results = tf.add(images * 0.5, labels_concat * 255 * 0.5)
     results = tf.cast(results, tf.uint8)
     return tf.summary.image('prediction_images', results, batch_size)
 
 def visual_guide_summary(images):
-    unnormalized_images = images + np.array((104, 117, 123))
     batch_size = images.get_shape().as_list()[0]
-    results = tf.cast(unnormalized_images, tf.uint8)
+    results = tf.cast(images, tf.uint8)
     return tf.summary.image('visual guides', results, batch_size)
 
 def get_model_func(base_model):
@@ -154,8 +150,10 @@ def train_finetune(dataset, model_params, learning_rate, logs_path, max_training
     # Log results on training images
     if use_image_summary:
         probabilities = tf.nn.sigmoid(net)
-        img_summary = binary_seg_summary(input_image, probabilities, gb_image, input_label)
-        vg_summary = visual_guide_summary(guide_image)
+        input_image_orig = input_image / model_params.scale_value + model_params.mean_value
+        guide_image_orig = guide_image / model_params.scale_value + model_params.mean_value
+        img_summary = binary_seg_summary(input_image_orig, probabilities, gb_image, input_label)
+        vg_summary = visual_guide_summary(guide_image_orig)
     # Initialize variables
     init = tf.global_variables_initializer()
 
