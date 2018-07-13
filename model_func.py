@@ -177,7 +177,7 @@ def visual_modulator_lite(guide_image, model_params, scope='osmn', is_training=F
     Tensor of the visual modulation parameters
     """
     mod_early_conv = model_params.mod_early_conv
-    n_modulator_param = 1024 + 512 + 256 + 128
+    n_modulator_param = [128, 256, 512, 1024] # 1024 + 512 + 256 + 128
     with tf.variable_scope(scope, [guide_image]) as sc, \
             slim.arg_scope(mobilenet_v1.mobilenet_v1_arg_scope(is_training=is_training)) as arg_sc:
         modulator_params = None
@@ -203,7 +203,7 @@ def osmn_lite(inputs, model_params, visual_modulator_params = None, scope='osmn'
     end_points: Dictionary with all Tensors of the network
     """
     guide_im_size = tf.shape(inputs[0])
-    im_size = tf.shape(inputs[2])
+    im_size = model_params.im_size
     batch_size = inputs[1].get_shape().as_list()[0]
     use_visual_modulator = model_params.use_visual_modulator
     use_spatial_modulator = model_params.use_spatial_modulator
@@ -263,7 +263,7 @@ def osmn_lite(inputs, model_params, visual_modulator_params = None, scope='osmn'
             side_3 = slim.conv2d(net_3, 16, [3, 3], scope='conv5_16')
             side_4 = slim.conv2d(net_4, 16, [3, 3], scope='conv11_16')
             side_5 = slim.conv2d(net_5, 16, [3, 3], scope='conv13_16')
-            up_size = [im_size[1]/2, im_size[2]/2]
+            up_size = [im_size[1]/2, im_size[0]/2]
             side_2_f = tf.image.resize_bilinear(side_2, up_size)
             side_3_f = tf.image.resize_bilinear(side_3, up_size)
             side_4_f = tf.image.resize_bilinear(side_4, up_size)
@@ -271,7 +271,7 @@ def osmn_lite(inputs, model_params, visual_modulator_params = None, scope='osmn'
             
             net = tf.concat([side_2_f, side_3_f, side_4_f, side_5_f], axis=3)
             net = slim.conv2d(net, 1, [1,1], scope='score')
-            net = tf.image.resize_bilinear(net, [im_size[1], im_size[2]])
+            net = tf.image.resize_bilinear(net, [im_size[1], im_size[0]])
         #net = slim.conv2d_transpose(net, 1, output_stride * 2, output_stride, normalizer_fn=None, padding="SAME", scope='score-up')
         end_points = slim.utils.convert_collection_to_dict(end_points_collection)
         return net, end_points

@@ -8,11 +8,13 @@ import sys
 import time
 from datetime import datetime
 import os
+import json
 import scipy.misc
 from PIL import Image
 from model_func import load_model, interp_surgery, osmn, osmn_masktrack, osmn_deeplab, visual_modulator
 from model_func import osmn_lite, visual_modulator_lite
-
+from tensorflow.core.protobuf import rewriter_config_pb2
+from tensorflow.python.framework import graph_util
 
 def class_balanced_cross_entropy_loss(output, label):
     """Define the class balanced cross entropy loss to train the network
@@ -347,3 +349,58 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
         print 'Total time elasped: %.3f seconds' % time_elapsed
         print 'Each frame takes %.3f seconds' % (time_elapsed / dataset.get_test_size())
 
+def export(model_params, checkpoint_file, config=None):
+    # Input data
+    batch_size = 1
+    im_size = model_params.im_size
+    guide_image = tf.placeholder(tf.float32, [batch_size, 224, 224, 3])
+    gb_image = tf.placeholder(tf.float32, [batch_size, im_size[1], im_size[0], 1])
+    input_image = tf.placeholder(tf.float32, [batch_size, im_size[1], im_size[0], 3])
+
+    # Create model
+    
+    model_func = get_model_func(model_params.base_model)
+    # split the model into visual modulator and other parts, visual modulator only need to run once
+    if model_params.use_visual_modulator:
+        if model_params.base_model =='lite':
+            v_m_params = visual_modulator_lite(guide_image, model_params, is_training=False)
+        else:
+            v_m_params = visual_modulator(guide_image, model_params, is_training=False)
+    else:
+        v_m_params = None
+    net, end_points = model_func([guide_image, gb_image, input_image], model_params, visual_modulator_params = v_m_params, is_training=False)
+    probabilities = tf.nn.sigmoid(net, name = 'prob')
+    global_step = tf.Variable(0, name='global_step', trainable=False)
+    rewrite_options = rewriter_config_pb2.RewriterConfig()
+    rewrite_options.optimizers.append('pruning')
+    rewrite_options.optimizers.append('constfold')
+    rewrite_options.optimizers.append('layout')
+    graph_options = tf.GraphOptions(
+            rewrite_options=rewrite_options, infer_shapes=True)
+    config = tf.ConfigProto(
+            graph_options=graph_options,
+            allow_soft_placement=True,
+            )
+    output_names = ['prob']
+    for i, v_m_param in enumerate(v_m_params):
+        visual_mod_name = 'visual_mod_params_%d' % (i+1)
+        tf.identity(v_m_param, name = visual_mod_name)
+        output_names.append(visual_mod_name)
+    # Create a saver to load the network
+    saver = tf.train.Saver([v for v in tf.global_variables()]) #if '-up' not in v.name and '-cr' not in v.name])
+    save_name = checkpoint_file + '.graph.pb'
+    with tf.Session(config=config) as sess:
+        sess.run(tf.global_variables_initializer())
+        saver.restore(sess, checkpoint_file)
+        if not model_params.base_model == 'lite':
+            sess.run(interp_surgery(tf.global_variables()))
+        output_graph_def = graph_util.convert_variables_to_constants(
+                sess,
+                sess.graph_def,
+                output_names)
+        with open(save_name, 'wb') as writer:
+            writer.write(output_graph_def.SerializeToString())
+        model_params.output_names = output_names
+        with open(save_name+'.json', 'w') as writer:
+            json.dump(vars(model_params), writer)
+        print 'Model saved in', save_name

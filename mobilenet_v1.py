@@ -259,9 +259,9 @@ def mobilenet_v1_base(inputs,
 
           if i in mod_layer_ids and vis_mod_params is not None:
               ch = depth(conv_def.depth)
-              vis_mod_params_cur = tf.slice(vis_mod_params, [0,0,0,vis_mod_idx], [-1,1,1,ch])
-              vis_mod_idx += ch
+              vis_mod_params_cur = vis_mod_params[vis_mod_idx]
               sp_mod_params_cur = sp_mod_params[sp_mod_idx]
+              vis_mod_idx += 1
               sp_mod_idx += 1
               net = net * vis_mod_params_cur + sp_mod_params_cur
           end_points[end_point] = net
@@ -274,7 +274,7 @@ def mobilenet_v1_base(inputs,
 
 
 def mobilenet_v1(inputs,
-                 num_classes=1000,
+                 num_classes=[1000],
                  dropout_keep_prob=0.999,
                  is_training=True,
                  min_depth=8,
@@ -335,16 +335,16 @@ def mobilenet_v1(inputs,
         end_points['AvgPool_1a'] = net
         # 1 x 1 x 1024
         #net = slim.dropout(net, keep_prob=dropout_keep_prob, scope='Dropout_1b')
-        logits = slim.conv2d(net, num_classes, [1, 1], activation_fn=None,
+        logits_arr = []
+        for i, n in enumerate(num_classes):
+          logits = slim.conv2d(net, n, [1, 1], activation_fn=None,
                              weights_initializer=tf.zeros_initializer(),
                              biases_initializer = tf.ones_initializer(),
-                             normalizer_fn=None, scope='Conv2d_1c_1x1')
-        if spatial_squeeze:
-          logits = tf.squeeze(logits, [1, 2], name='SpatialSqueeze')
-      end_points['Logits'] = logits
-      if prediction_fn:
-        end_points['Predictions'] = prediction_fn(logits, scope='Predictions')
-  return logits, end_points
+                             normalizer_fn=None, scope='Conv2d_1c_1x1_%d' % (i+1))
+          if spatial_squeeze:
+            logits = tf.squeeze(logits, [1, 2], name='SpatialSqueeze')
+          logits_arr.append(logits)
+  return logits_arr, end_points
 
 mobilenet_v1.default_image_size = 224
 
