@@ -1,11 +1,11 @@
 # OSMN: One-Shot Modulation Network for Semi-supervised Video Segmentation
 
-This repo is the released code of one-shot modulation network described in the tech report:
+This repo is the released code of one-shot modulation network described in the CVPR 2018 paper:
 ```
 @article{ Yang2018osmn,
   author = {Linjie Yang and Yanran Wang and Xuehan Xiong and Jianchao Yang and Aggelos K. Katsaggelos},  
 title = {Efficient Video Object Segmentation via Network Modulation},
-  journal = {arXiv preprint arXiv:1802.01218},
+  journal = {CVPR},
   year = {2018}
 }
 ```
@@ -26,7 +26,7 @@ In this work, we propose to use a meta neural network named modulator to manipul
    - Other python dependencies: PIL (Pillow version), numpy, scipy
    
 
-## Training
+## Training on DAVIS
 
 ### Stage 1: Training the network on MS-COCO
 1. Download MS-COCO 2017 dataset from [here](http://cocodataset.org/#download).
@@ -65,6 +65,9 @@ Then use the following command to get the mIU score.
 python youtube_eval.py DATA_PATH RESULT_PATH
 ```
 3. We release official model for both Stage 1 and 2, which can be downloaded from [here](https://www.dropbox.com/sh/6i5mgicuzmhart2/AACMO_C5guWcRHUD8K3ZHCV9a?dl=0). The Stage 1 model obtains mIU 72.2 on DAVIS 2016 and 52.5 on DAVIS 2017. The Stage 2 model obtains mIU 74.0 on DAVIS 2016.
+
+## Training on YoutubeVOS
+YoutubeVOS (https://youtube-vos.org/) is currently the largest video object segmentation dataset. To train and evaluate the model on YoutubeVOS, run `python osmn_train_eval_ytvos.py --data_path DATA_PATH --result_path RESULT_PATH --model_save_path MODEL_SAVE_PATH --gpu_id GPU_ID --batch_size BATCH_SIZE --randomize_guide --training_iters 200000`. After it finishes, further train the model with a decreased learning rate `1e-6` for 100k iterations.
 
 ## Contact ##
 If you have any questions regarding the repo, please send email to Linjie Yang (linjie.yang@snap.com). 
