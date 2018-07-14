@@ -7,10 +7,68 @@ import os
 import numpy as np
 import sys
 import random
+import multiprocessing as mp
 import pydensecrf.densecrf as dcrf
 from pydensecrf.utils import unary_from_labels, unary_from_softmax, create_pairwise_bilateral, create_pairwise_gaussian
 from util import get_mask_bbox, get_gb_image, to_bgr, mask_image, data_augmentation, \
         adaptive_crop_box, get_dilate_structure, perturb_mask, get_scaled_box
+def _get_obj_mask(image, idx):
+    return Image.fromarray((np.array(image) == idx).astype(np.uint8))
+def get_one(sample, new_size, args):
+    if len(sample) == 4:
+        # guide image is both for appearance and location guidance
+        guide_image = Image.open(sample[0])
+        guide_label = Image.open(sample[1])
+        image = Image.open(sample[2])
+        label = Image.open(sample[3])
+        ref_label = guide_label
+    else:
+        # guide image is only for appearance guidance, ref label is only for location guidance
+        guide_image = Image.open(sample[0])
+        guide_label = Image.open(sample[1])
+        #guide_image = Image.open(sample[2])
+        ref_label = Image.open(sample[2])
+        image = Image.open(sample[3])
+        label = Image.open(sample[4])
+    if len(sample) > 5:
+        label_id = sample[5]
+    else: 
+        label_id = 0
+    image = image.resize(new_size, Image.BILINEAR)
+    label = label.resize(new_size, Image.NEAREST)
+    ref_label = ref_label.resize(new_size, Image.NEAREST) 
+    guide_label = guide_label.resize(guide_image.size, Image.NEAREST)
+    if label_id > 0:
+        guide_label = _get_obj_mask(guide_label, label_id)
+        ref_label = _get_obj_mask(ref_label, label_id)
+        label = _get_obj_mask(label, label_id)
+    guide_label_data = np.array(guide_label)
+    bbox = get_mask_bbox(guide_label_data)
+    guide_image = guide_image.crop(bbox)
+    guide_label = guide_label.crop(bbox)
+    guide_image, guide_label = data_augmentation(guide_image, guide_label,
+            args.guide_size, data_aug_flip = args.data_aug_flip,
+            keep_aspect_ratio = args.vg_keep_aspect_ratio,
+            random_crop_ratio = args.vg_random_crop_ratio,
+            random_rotate_angle = args.vg_random_rotate_angle, color_aug = args.vg_color_aug)
+    if not args.use_original_mask:
+        gb_image = get_gb_image(np.array(ref_label),center_perturb=args.sg_center_perturb_ratio, 
+                std_perturb=args.sg_std_perturb_ratio)
+    else:
+        gb_image = perturb_mask(np.array(ref_label))
+        gb_image = ndimage.morphology.binary_dilation(gb_image, 
+                structure=args.dilate_structure) * 255
+    image_data = np.array(image, dtype=np.float32)
+    label_data = np.array(label, dtype=np.uint8) > 0 
+    image_data = to_bgr(image_data)
+    image_data = (image_data - args.mean_value) * args.scale_value
+    guide_label_data = np.array(guide_label,dtype=np.uint8)
+    guide_image_data = np.array(guide_image, dtype=np.float32)
+    guide_image_data = to_bgr(guide_image_data)
+    guide_image_data = (guide_image_data - args.mean_value) * args.scale_value
+    guide_image_data = mask_image(guide_image_data, guide_label_data)
+    return guide_image_data, gb_image, image_data, label_data
+
 class Dataset:
     def __init__(self, train_list, test_list, args,
             data_aug=False):
@@ -22,8 +80,10 @@ class Dataset:
         """
         # Define types of data augmentation
         random.seed(1234)
+        self.args = args
         self.data_aug = data_aug
         self.data_aug_flip = data_aug
+        self.args.data_aug_flip = data_aug
         self.data_aug_scales = args.data_aug_scales
         self.use_original_mask = args.use_original_mask
         self.vg_random_rotate_angle = args.vg_random_rotate_angle
@@ -49,9 +109,10 @@ class Dataset:
         self.dilate_structure = get_dilate_structure(5)
         np.random.shuffle(self.train_idx)
         self.size = args.im_size
-        self.crop_size = 300
-        self.mean_value = np.array((104, 117, 123))
-        self.guide_size = (224, 224)
+        self.mean_value = args.mean_value #np.array((104, 117, 123))
+        self.scale_value = args.scale_value # 0.00787 for mobilenet 
+        self.args.guide_size = (224, 224)
+        self.pool = mp.Pool(processes=8)
 
     def next_batch(self, batch_size, phase):
         """Get next batch of image (path) and labels
@@ -81,52 +142,12 @@ class Dataset:
             if self.data_aug_scales:
                 scale = random.choice(self.data_aug_scales)
                 new_size = (int(self.size[0] * scale), int(self.size[1] * scale))
-            for i in idx:
-                sample = self.train_list[i]
-                if len(sample) == 4:
-                    # guide image is both for appearance and location guidance
-                    guide_image = Image.open(sample[0])
-                    guide_label = Image.open(sample[1])
-                    image = Image.open(sample[2])
-                    label = Image.open(sample[3])
-                    ref_label = guide_label
-                else:
-                    # guide image is only for appearance guidance, ref label is only for location guidance
-                    guide_image = Image.open(sample[0])
-                    guide_label = Image.open(sample[1])
-                    #guide_image = Image.open(sample[2])
-                    ref_label = Image.open(sample[2])
-                    image = Image.open(sample[3])
-                    label = Image.open(sample[4])
-                image = image.resize(new_size, Image.BILINEAR)
-                label = label.resize(new_size, Image.NEAREST)
-                ref_label = ref_label.resize(new_size, Image.NEAREST) 
-                guide_label = guide_label.resize(guide_image.size, Image.NEAREST)
-                bbox = get_mask_bbox(np.array(guide_label))
-                guide_image = guide_image.crop(bbox)
-                guide_label = guide_label.crop(bbox)
-                guide_image, guide_label = data_augmentation(guide_image, guide_label,
-                        self.guide_size, data_aug_flip = self.data_aug_flip,
-                        keep_aspect_ratio = self.vg_keep_aspect_ratio,
-                        random_crop_ratio = self.vg_random_crop_ratio,
-                        random_rotate_angle = self.vg_random_rotate_angle, color_aug = self.vg_color_aug)
-                if not self.use_original_mask:
-                    gb_image = get_gb_image(np.array(ref_label),center_perturb=self.sg_center_perturb_ratio, 
-                            std_perturb=self.sg_std_perturb_ratio)
-                else:
-                    gb_image = perturb_mask(np.array(ref_label))
-                    gb_image = ndimage.morphology.binary_dilation(gb_image, 
-                            structure=self.dilate_structure) * 255
-                image_data = np.array(image, dtype=np.float32)
-                label_data = np.array(label, dtype=np.uint8) > 0 
-                image_data = to_bgr(image_data)
-                image_data -= self.mean_value
-                guide_label_data = np.array(guide_label,dtype=np.uint8)
-                guide_image_data = np.array(guide_image, dtype=np.float32)
-                guide_image_data = to_bgr(guide_image_data)
-                guide_image_data -= self.mean_value
-                if not self.bbox_sup:
-                    guide_image_data = mask_image(guide_image_data, guide_label_data)
+            if batch_size  == 1:
+                batch = [get_one(self.train_list[idx[0]], new_size, self.args)]
+            else:
+                batch = [self.pool.apply(get_one, args=(self.train_list[i], new_size, self.args)) for i in idx]
+            for guide_image_data, gb_image, image_data, label_data in batch:
+                
                 guide_images.append(guide_image_data)
                 gb_images.append(gb_image)
                 images.append(image_data)
@@ -153,13 +174,21 @@ class Dataset:
                 self.test_ptr = new_ptr
             i = idx[0]
             sample = self.test_list[i]
+            if len(sample) > 4:
+                label_id = sample[4]
+            else: 
+                label_id = 0
+            
             if sample[0] == None:
                 # visual guide image / mask is none, only read spatial guide and input image
                 first_frame = False
                 ref_label = Image.open(sample[2])
                 image = Image.open(sample[3])
                 frame_name = sample[3].split('/')[-1].split('.')[0] + '.png'
-                if self.multiclass:
+                if len(sample) > 5:
+                    # vid_path/label_id/frame_name
+                    ref_name = os.path.join(sample[5], frame_name)
+                elif self.multiclass:
                     # seq_name/label_id/frame_name
                     ref_name = os.path.join(*(sample[2].split('/')[-3:-1] + [frame_name]))
                 else:
@@ -170,7 +199,10 @@ class Dataset:
                 first_frame = True
                 guide_image = Image.open(sample[0])
                 guide_label = Image.open(sample[1])
-                if self.multiclass:
+                if len(sample) > 5:
+                    # vid_path/label_id/frame_name
+                    ref_name = os.path.join(sample[5], sample[1].split('/')[-1])
+                elif self.multiclass:
                     # seq_name/label_id/frame_name
                     ref_name = os.path.join(*(sample[1].split('/')[-3:]))
                 else:
@@ -184,17 +216,20 @@ class Dataset:
                     resize_ratio = max(float(self.size[0])/image.size[0], float(self.size[0])/image.size[1])
                     self.new_size = (int(resize_ratio * image.size[0]), int(resize_ratio * image.size[1]))
                 ref_label = ref_label.resize(self.new_size, Image.NEAREST)
-                ref_label_data = np.array(ref_label) / 255
-                gb_image = get_gb_image(ref_label_data, center_perturb=0, std_perturb=0)
+                if label_id > 0:
+                    ref_label = _get_obj_mask(ref_label, label_id)
+                ref_label_data = np.array(ref_label) 
                 image_ref_crf = image.resize(self.new_size, Image.BILINEAR)
                 self.images.append(np.array(image_ref_crf))
                 image = image.resize(self.new_size, Image.BILINEAR)
                 if self.use_original_mask:
                     gb_image = ndimage.morphology.binary_dilation(ref_label_data, 
                             structure=self.dilate_structure) * 255
+                else:
+                    gb_image = get_gb_image(ref_label_data, center_perturb=0, std_perturb=0)
                 image_data = np.array(image, dtype=np.float32)
                 image_data = to_bgr(image_data)
-                image_data -= self.mean_value
+                image_data = (image_data - self.mean_value) * self.scale_value
                 gb_images.append(gb_image)
                 images.append(image_data)
                 images = np.array(images)
@@ -202,18 +237,19 @@ class Dataset:
                 guide_images = None
             else:
                 # process visual guide images
+                # resize to same size of guide_image first, in case of full resolution input
                 guide_label = guide_label.resize(guide_image.size, Image.NEAREST)
+                if label_id > 0:
+                    guide_label = _get_obj_mask(guide_label, label_id)
                 bbox = get_mask_bbox(np.array(guide_label))
                 guide_image = guide_image.crop(bbox)
                 guide_label = guide_label.crop(bbox)
                 guide_image, guide_label = data_augmentation(guide_image, guide_label,
-                        self.guide_size, data_aug_flip=False, pad_ratio = self.vg_pad_ratio, keep_aspect_ratio = self.vg_keep_aspect_ratio)
+                        self.args.guide_size, data_aug_flip=False, pad_ratio = self.vg_pad_ratio, keep_aspect_ratio = self.vg_keep_aspect_ratio)
                 
-                #guide_image = guide_image.resize(self.guide_size, Image.BILINEAR)
-                #guide_label = guide_label.resize(self.guide_size, Image.NEAREST)
                 guide_image_data = np.array(guide_image, dtype=np.float32)
                 guide_image_data = to_bgr(guide_image_data)
-                guide_image_data -= self.mean_value
+                guide_image_data = (guide_image_data - self.mean_value) * self.scale_value
                 guide_label_data = np.array(guide_label, dtype=np.uint8)
                 if not self.bbox_sup:
                     guide_image_data = mask_image(guide_image_data, guide_label_data)
