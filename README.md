@@ -67,7 +67,16 @@ python youtube_eval.py DATA_PATH RESULT_PATH
 3. We release official model for both Stage 1 and 2, which can be downloaded from [here](https://www.dropbox.com/sh/6i5mgicuzmhart2/AACMO_C5guWcRHUD8K3ZHCV9a?dl=0). The Stage 1 model obtains mIU 72.2 on DAVIS 2016 and 52.5 on DAVIS 2017. The Stage 2 model obtains mIU 74.0 on DAVIS 2016.
 
 ## Training on YoutubeVOS
-YoutubeVOS (https://youtube-vos.org/) is currently the largest video object segmentation dataset. To train and evaluate the model on YoutubeVOS, run `python osmn_train_eval_ytvos.py --data_path DATA_PATH --result_path RESULT_PATH --model_save_path MODEL_SAVE_PATH --gpu_id GPU_ID --batch_size BATCH_SIZE --randomize_guide --training_iters 200000`. After it finishes, further train the model with a decreased learning rate `1e-6` for 100k iterations.
+YoutubeVOS (https://youtube-vos.org/) is currently the largest video object segmentation dataset. To train and evaluate the model on YoutubeVOS, run `python osmn_train_eval_ytvos.py --data_path DATA_PATH --result_path RESULT_PATH --model_save_path MODEL_SAVE_PATH --gpu_id GPU_ID --batch_size BATCH_SIZE --randomize_guide --training_iters 200000`. After it finishes, further train the model with a decreased learning rate `1e-6` for 100k iterations. 
+To evaluate the model, run the following command to generate results for each object.
+```
+python osmn_train_eval_ytvos.py --data_path DATA_PATH --whole_model_path WHOLE_MODEL_PATH --result_path RESULT_PATH --only_testing --gpu_id GPU_ID --save_score
+```
+Then use the script `ytvos_merge_result.py` to merge objects in the same video:
+```
+python ytvos_merge_result.py DATA_PATH PRED_PATH OUTPUT_PATH DATA_SPLIT
+```
+Finally upload the results to Codalab website of the ECCV challenge.
 
 ## Contact ##
 If you have any questions regarding the repo, please send email to Linjie Yang (linjie.yang@snap.com). 
