@@ -75,9 +75,18 @@ config.gpu_options.per_process_gpu_memory_fraction = 0.9
 with open(val_path, 'r') as f:
     val_seqs = json.load(f)['videos']
 resDirLabel = args.result_path
+process_seqs = {}
 if args.start_id != '':
-    idx = [s['vid'] for s in val_seqs].index(args.start_id)
-    val_seqs = val_seqs[idx:]
+    found = False
+    for vid in val_seqs:
+        if args.start_id != vid and not found:
+            continue
+        elif args.start_id == vid:
+            found = True
+            process_seqs[vid] = val_seqs[vid]
+        else:
+            process_seqs[vid] = val_seqs[vid]
+    val_seqs = process_seqs
 for vid_id, seq in val_seqs.iteritems():
     vid_frames = seq['objects']
     vid_anno_path = os.path.join(baseDir, args.test_split, 'Annotations', vid_id)

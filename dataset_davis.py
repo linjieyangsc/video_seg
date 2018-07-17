@@ -112,7 +112,13 @@ class Dataset:
         self.mean_value = args.mean_value #np.array((104, 117, 123))
         self.scale_value = args.scale_value # 0.00787 for mobilenet 
         self.args.guide_size = (224, 224)
-        self.pool = mp.Pool(processes=8)
+        if args.num_loader > 1:
+            self.pool = mp.Pool(processes=args.num_loader)
+    
+    def __del__(self):
+        if self.args.num_loader > 1:
+            self.pool.close()
+            self.pool.join()
 
     def next_batch(self, batch_size, phase):
         """Get next batch of image (path) and labels
@@ -142,8 +148,8 @@ class Dataset:
             if self.data_aug_scales:
                 scale = random.choice(self.data_aug_scales)
                 new_size = (int(self.size[0] * scale), int(self.size[1] * scale))
-            if batch_size  == 1:
-                batch = [get_one(self.train_list[idx[0]], new_size, self.args)]
+            if self.args.num_loader == 1:
+                batch = [get_one(self.train_list[i], new_size, self.args) for i in idx]
             else:
                 batch = [self.pool.apply(get_one, args=(self.train_list[i], new_size, self.args)) for i in idx]
             for guide_image_data, gb_image, image_data, label_data in batch:

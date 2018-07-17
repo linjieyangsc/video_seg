@@ -152,6 +152,12 @@ def add_arguments(parser):
             default=8,
             help='Batch size in training')
     group.add_argument(
+            '--num_loader',
+            type=int,
+            required=False,
+            default=1,
+            help='Number of loader for data loading')
+    group.add_argument(
             '--save_score',
             required=False,
             action='store_true',
