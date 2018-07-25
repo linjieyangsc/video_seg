@@ -327,10 +327,10 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
                 # create a black dummy image for result of the first frame, to be compatible with DAVIS eval toolkit
                 scipy.misc.imsave(os.path.join(result_path, save_names[0]), np.zeros(guide_images.shape[1:3]))
             else:
+                feed_dict = { gb_image:gb_images, input_image:images}
                 if model_params.use_visual_modulator:
-                    feed_dict = { gb_image:gb_images, input_image:images, v_m_params:curr_v_m_params}
-                else:
-                    feed_dict = { gb_image:gb_images, input_image:images}
+                    for v_m_param, curr_param in zip(v_m_params, curr_v_m_params):
+                        feed_dict[v_m_param] = curr_param
                 res_all = sess.run([probabilities], feed_dict=feed_dict)
                 res = res_all[0]
                 if model_params.crf_postprocessing:

@@ -106,7 +106,7 @@ class Dataset:
         self.train_idx = np.arange(self.train_size)
         self.test_idx = np.arange(self.test_size)
         self.crf_infer_steps = 5
-        self.dilate_structure = get_dilate_structure(5)
+        self.args.dilate_structure = get_dilate_structure(5)
         np.random.shuffle(self.train_idx)
         self.size = args.im_size
         self.mean_value = args.mean_value #np.array((104, 117, 123))
@@ -230,7 +230,7 @@ class Dataset:
                 image = image.resize(self.new_size, Image.BILINEAR)
                 if self.use_original_mask:
                     gb_image = ndimage.morphology.binary_dilation(ref_label_data, 
-                            structure=self.dilate_structure) * 255
+                            structure=self.args.dilate_structure) * 255
                 else:
                     gb_image = get_gb_image(ref_label_data, center_perturb=0, std_perturb=0)
                 image_data = np.array(image, dtype=np.float32)
