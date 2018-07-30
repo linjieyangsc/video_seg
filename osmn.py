@@ -179,7 +179,8 @@ def train_finetune(dataset, model_params, learning_rate, logs_path, max_training
             print('Initializing from pre-trained imagenet model...')
             if model_params.use_visual_modulator:
                 load_model(model_params.vis_mod_model_path, 'osmn/modulator')(sess)
-            load_model(model_params.seg_model_path, 'osmn/seg')(sess)
+            if model_params.seg_model_path != '':
+                load_model(model_params.seg_model_path, 'osmn/seg')(sess)
             step = 1
         else:
             print('Initializing from pre-trained model...')
@@ -329,8 +330,11 @@ def test(dataset, model_params, checkpoint_file, result_path, batch_size=1, conf
             else:
                 feed_dict = { gb_image:gb_images, input_image:images}
                 if model_params.use_visual_modulator:
-                    for v_m_param, curr_param in zip(v_m_params, curr_v_m_params):
-                        feed_dict[v_m_param] = curr_param
+                    if model_params.base_model=='lite':
+                        for v_m_param, curr_param in zip(v_m_params, curr_v_m_params):
+                            feed_dict[v_m_param] = curr_param
+                    else:
+                        feed_dict[v_m_params] = curr_v_m_params
                 res_all = sess.run([probabilities], feed_dict=feed_dict)
                 res = res_all[0]
                 if model_params.crf_postprocessing:

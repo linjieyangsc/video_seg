@@ -20,7 +20,7 @@ im_num = 0
 iou =[]
 seq_n = 0
 sample_n = 0
-prediction_size = (854, 480)#(448, 256)
+prediction_size = (448, 256)
 subfd_names = []
 for vid_id, seq  in  seq_data.iteritems():
     print 'processing', vid_id
