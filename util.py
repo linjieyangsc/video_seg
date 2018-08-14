@@ -112,10 +112,10 @@ def perturb_mask(mask, center_perturb = 0.2, size_perturb=0.2):
     return mask_out
 
 def rotate_image(image, angle):
-    image_center = tuple(np.array(image.shape[:2])/2)
+    image_center = tuple(np.array(image.shape[1::-1])/2)
     rot_mat = cv2.getRotationMatrix2D(image_center,angle,1.0)
     angle_r = float(angle) / 180 * PI
-    result = cv2.warpAffine(image, rot_mat, image.shape[:2],flags=cv2.INTER_NEAREST)
+    result = cv2.warpAffine(image, rot_mat, image.shape[1::-1],flags=cv2.INTER_NEAREST)
     return result
 
 def get_scaled_box(box, out_size, in_size):
