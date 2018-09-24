@@ -14,13 +14,14 @@ data_path = sys.argv[1]
 pred_path = sys.argv[2] 
 dataset_split = sys.argv[4]
 merge_path = sys.argv[3]
+pred_size = int(sys.argv[5])
 listFile = '%s/%s/meta.json' % (data_path, dataset_split)
 seq_data = json.load(open(listFile))['videos']
 im_num = 0
 iou =[]
 seq_n = 0
 sample_n = 0
-prediction_size = (448, 256)
+prediction_size = (448, 256) if pred_size == 256 else (854, 480)
 subfd_names = []
 for vid_id, seq  in  seq_data.iteritems():
     print 'processing', vid_id
@@ -54,6 +55,7 @@ for vid_id, seq  in  seq_data.iteritems():
             else:
                 score = np.load(open(os.path.join(pred_path, vid_id, str(label_id), im_name+'.npy')))
                 
+            print score.shape
             scores.append(score)
         obj_ids_ext = np.array([0] + obj_ids, dtype=np.uint8)
         im_size = scores[0].shape

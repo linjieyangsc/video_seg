@@ -21,7 +21,7 @@ def add_arguments(parser):
             '--data_path',
             type=str,
             required=False,
-            default='/raid/ljyang/data/YoutubeVOS')
+            default='/raid/ljyang/data/LSVOS')
     group.add_argument(
             '--seg_model_path',
             type=str,
@@ -42,7 +42,7 @@ def add_arguments(parser):
             '--test_split',
             type=str,
             required=False,
-            default='valid'
+            default='val'
             )
     group.add_argument(
             '--im_size',
@@ -65,7 +65,7 @@ sys.stdout.flush()
 baseDir = args.data_path
 random.seed(1234)
 # User defined parameters
-val_path = os.path.join(baseDir, args.test_split, 'meta.json' )
+val_path = os.path.join(baseDir, 'all_%s_seqs.json' % (args.test_split))
 ## default config
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
@@ -73,46 +73,37 @@ config.allow_soft_placement = True
 config.gpu_options.per_process_gpu_memory_fraction = 0.9
 
 with open(val_path, 'r') as f:
-    val_seqs = json.load(f)['videos']
+    val_seqs = json.load(f)
 resDirLabel = args.result_path
-process_seqs = {}
 if args.start_id != '':
-    found = False
-    for vid in val_seqs:
-        if args.start_id != vid and not found:
-            continue
-        elif args.start_id == vid:
-            found = True
-            process_seqs[vid] = val_seqs[vid]
-        else:
-            process_seqs[vid] = val_seqs[vid]
-    val_seqs = process_seqs
-for vid_id, seq in val_seqs.iteritems():
-    vid_frames = seq['objects']
-    vid_anno_path = os.path.join(baseDir, args.test_split, 'Annotations', vid_id)
-    vid_image_path = os.path.join(baseDir, args.test_split, 'JPEGImages', vid_id)
-    for label_id, obj_info in vid_frames.iteritems():
-        frames = obj_info['frames']
-        # train on first frame test on whole sequence
+    idx = [s['vid'] for s in val_seqs].index(args.start_id)
+    val_seqs = val_seqs[idx:]
+for seq in val_seqs:
+    vid_frames = seq['frames']
+    vid_anno_path = seq['anno_path']
+    vid_image_path = seq['image_path']
+    vid_id = seq['vid']
+    for label_id, frames in vid_frames.iteritems():
+    # train on first frame test on whole sequence
         res_fd = os.path.join(vid_id, label_id)
-        train_imgs_with_guide = [(os.path.join(vid_image_path, frames[0]+'.jpg'), 
-                os.path.join(vid_anno_path, frames[0]+'.png'),
-                os.path.join(vid_anno_path, frames[0]+'.png'),
-                os.path.join(vid_image_path, frames[0]+'.jpg'),
-                os.path.join(vid_anno_path, frames[0])+'.png', int(label_id))]      
+        train_imgs_with_guide = [(os.path.join(vid_image_path, frames[0][:-4]+'.jpg'), 
+                os.path.join(vid_anno_path, frames[0]),
+                os.path.join(vid_anno_path, frames[0]),
+                os.path.join(vid_image_path, frames[0][:-4]+'.jpg'),
+                os.path.join(vid_anno_path, frames[0]), int(label_id))]      
         test_imgs_with_guide = []
         
         # each sample: visual guide image, visual guide mask, spatial guide mask, input image
-        test_imgs_with_guide += [(os.path.join(vid_image_path, frames[0] + '.jpg'), 
-                os.path.join(vid_anno_path, frames[0]+'.png'),
+        test_imgs_with_guide += [(os.path.join(vid_image_path, frames[0].split('.')[0] + '.jpg'), 
+                os.path.join(vid_anno_path, frames[0]),
                 None, None, int(label_id), res_fd)]
         # reuse the visual modulation parameters and use predicted spatial guide image of previous frame
         
-        test_imgs_with_guide += [(None, None, os.path.join(vid_anno_path, frames[0]+'.png'),
-                os.path.join(vid_image_path, frames[1]+'.jpg'), int(label_id), res_fd)]
+        test_imgs_with_guide += [(None, None, os.path.join(vid_anno_path, frames[0]),
+                os.path.join(vid_image_path, frames[1].split('.')[0]+'.jpg'), int(label_id), res_fd)]
         test_imgs_with_guide += [(None, None,
-                os.path.join(resDirLabel, res_fd, prev_frame+'.png'),
-                os.path.join(vid_image_path, frame+'.jpg'), 0, res_fd)
+                os.path.join(resDirLabel, res_fd, prev_frame),
+                os.path.join(vid_image_path, frame.split('.')[0]+'.jpg'), 0, res_fd)
                 for prev_frame, frame in zip(frames[1:-1], frames[2:])]
         # Define Dataset
         dataset = Dataset(train_imgs_with_guide, test_imgs_with_guide, args,

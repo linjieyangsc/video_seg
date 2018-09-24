@@ -183,11 +183,19 @@ def visual_modulator_lite(guide_image, model_params, scope='osmn', is_training=F
         modulator_params = None
 
         # Collect outputs of all intermediate layers.
-        modulator_params, end_points = mobilenet_v1.mobilenet_v1(
+        net, end_points = mobilenet_v1.mobilenet_v1(
                 guide_image, scope = 'modulator',
-                num_classes = n_modulator_param,
+                num_classes = 2048,
                 spatial_squeeze = False,
                 is_training = is_training)
+        net = tf.nn.relu(net)
+        modulator_params = []
+        for i, n in enumerate(n_modulator_param):
+          logits = slim.conv2d(net, n, [1, 1], activation_fn=None,
+                             weights_initializer=tf.zeros_initializer(),
+                             biases_initializer = tf.ones_initializer(),
+                             normalizer_fn=None, scope='Conv2d_out_%d' % (i+1))
+          modulator_params.append(logits)
     return modulator_params
 def osmn_lite(inputs, model_params, visual_modulator_params = None, scope='osmn', is_training=False):
     """Defines the OSMN
