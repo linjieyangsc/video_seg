@@ -16,7 +16,7 @@ In this work, we propose to use a meta neural network named modulator to manipul
 ## Installation
 1. Clone the repository
    ```Shell
-   git clone https://github.sc-corp.net/linjie-yang/video_segmentation.git
+   git clone https://github.com/linjieyangsc/video_seg.git
    ```
 2. Install if necessary the required dependencies:
    
