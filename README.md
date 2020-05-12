@@ -79,4 +79,4 @@ python ytvos_merge_result.py DATA_PATH PRED_PATH OUTPUT_PATH DATA_SPLIT
 Finally upload the results to Codalab website of the ECCV challenge.
 
 ## Contact ##
-If you have any questions regarding the repo, please send email to Linjie Yang (linjie.yang@snap.com). 
+If you have any questions regarding the repo, please send email to Linjie Yang (yljatthu@gmail.com). 
